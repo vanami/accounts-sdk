@@ -32,6 +32,61 @@ type Identity struct {
 	Scopes    []string // OAuth scopes granted
 	ClientID  string   // the service the token was issued to
 	ExpiresAt time.Time
+	// Plan and Entitlements are the account's in this service when the token
+	// was issued (it lives 15 minutes; Client.Entitlements is real time).
+	Plan         string
+	Entitlements map[string]any
+}
+
+// Limit answers an integer entitlement ("domains": 10). ok is false when
+// the plan does not grant it at all.
+func (id Identity) Limit(key string) (n int64, ok bool) {
+	switch v := id.Entitlements[key].(type) {
+	case float64:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	}
+	return 0, false
+}
+
+// Has answers a boolean entitlement ("catch_all": true); an integer limit
+// above zero counts as granted.
+func (id Identity) Has(key string) bool {
+	switch v := id.Entitlements[key].(type) {
+	case bool:
+		return v
+	default:
+		n, ok := id.Limit(key)
+		return ok && n > 0
+	}
+}
+
+// ErrNotEntitled is what Require answers when the plan does not allow it.
+var ErrNotEntitled = errors.New("kit: the account's plan does not allow this")
+
+// Require checks that the caller (from Middleware) may use n units of an
+// integer entitlement in total, or that a flag is set (n ignored for flags):
+//
+//	if err := kit.Require(ctx, "domains", existing+1); err != nil { … 402 … }
+func Require(ctx context.Context, key string, n int64) error {
+	id, ok := FromContext(ctx)
+	if !ok {
+		return ErrNoToken
+	}
+	if b, isFlag := id.Entitlements[key].(bool); isFlag {
+		if b {
+			return nil
+		}
+		return fmt.Errorf("%w: %s", ErrNotEntitled, key)
+	}
+	limit, ok := id.Limit(key)
+	if !ok || n > limit {
+		return fmt.Errorf("%w: %s (needs %d, plan allows %d)", ErrNotEntitled, key, n, limit)
+	}
+	return nil
 }
 
 var (
@@ -159,15 +214,17 @@ func (a *audience) UnmarshalJSON(b []byte) error {
 }
 
 type claims struct {
-	Issuer      string   `json:"iss"`
-	Subject     string   `json:"sub"`
-	Audience    audience `json:"aud"`
-	Expiry      int64    `json:"exp"`
-	NotBefore   int64    `json:"nbf"`
-	ClientID    string   `json:"client_id"`
-	Scope       string   `json:"scope"`
-	AccountID   string   `json:"account_id"`
-	AccountRole string   `json:"account_role"`
+	Issuer       string         `json:"iss"`
+	Subject      string         `json:"sub"`
+	Audience     audience       `json:"aud"`
+	Expiry       int64          `json:"exp"`
+	NotBefore    int64          `json:"nbf"`
+	ClientID     string         `json:"client_id"`
+	Scope        string         `json:"scope"`
+	AccountID    string         `json:"account_id"`
+	AccountRole  string         `json:"account_role"`
+	Plan         string         `json:"plan"`
+	Entitlements map[string]any `json:"entitlements"`
 }
 
 // Verify checks a raw access token: RS256 signature by a published kit key,
@@ -204,7 +261,8 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
 		return Identity{}, fmt.Errorf("%w: no subject/account", ErrInvalidToken)
 	}
 	return Identity{UserID: c.Subject, AccountID: c.AccountID, Role: c.AccountRole,
-		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0)}, nil
+		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0),
+		Plan: c.Plan, Entitlements: c.Entitlements}, nil
 }
 
 type ctxKey struct{}
