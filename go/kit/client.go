@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -128,9 +129,25 @@ type Account struct {
 type Member struct {
 	UserID   string    `json:"user_id"`
 	Email    string    `json:"email"`
-	Role     string    `json:"role"`
+	Role     string    `json:"role"` // in the account: owner | admin | member
 	JoinedAt time.Time `json:"joined_at"`
+	// ProductRole is the member's role in this service when it declares
+	// roles (G172); ProductRoleAssigned is false while it is the default
+	// for their account role.
+	ProductRole         string `json:"product_role,omitempty"`
+	ProductRoleAssigned bool   `json:"product_role_assigned,omitempty"`
 }
+
+// Grant is the caller's role and permissions in this service, read from
+// the kit's database at the time of the call.
+type Grant struct {
+	Product     string   `json:"product"`
+	Role        string   `json:"role"`
+	Permissions []string `json:"permissions"`
+}
+
+// Can reports whether the grant includes a permission.
+func (g Grant) Can(permission string) bool { return slices.Contains(g.Permissions, permission) }
 
 type Invitation struct {
 	ID        string    `json:"id"`
@@ -170,6 +187,22 @@ func (c *Client) RevokeInvitation(ctx context.Context, accessToken, id string) e
 // SetRole changes a member's role.
 func (c *Client) SetRole(ctx context.Context, accessToken, userID, role string) error {
 	return c.call(ctx, http.MethodPatch, "/api/v1/members/"+userID, accessToken, map[string]string{"role": role}, nil)
+}
+
+// Permissions answers the caller's role and permissions in this service now
+// — for an action that must not rest on a token up to 15 minutes old.
+func (c *Client) Permissions(ctx context.Context, accessToken string) (Grant, error) {
+	var out Grant
+	err := c.call(ctx, http.MethodGet, "/api/v1/permissions", accessToken, nil, &out)
+	return out, err
+}
+
+// SetProductRole assigns a member's role in this service (owners and
+// admins; an admin cannot change an owner's). "" returns the member to the
+// default for their account role.
+func (c *Client) SetProductRole(ctx context.Context, accessToken, userID, role string) error {
+	return c.call(ctx, http.MethodPatch, "/api/v1/members/"+userID+"/product-role", accessToken,
+		map[string]string{"role": role}, nil)
 }
 
 // RemoveMember removes a member — with the caller's own user id, leaves.

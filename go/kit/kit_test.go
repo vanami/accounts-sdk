@@ -137,3 +137,34 @@ func TestKeyRotationIsPickedUp(t *testing.T) {
 		t.Fatalf("rotated key: %v", err)
 	}
 }
+
+func TestPermissions(t *testing.T) {
+	f := newFakeKit(t)
+	ctx := context.Background()
+	v, err := kit.NewVerifier(ctx, f.ts.URL, "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := v.Verify(ctx, f.sign("k1", f.claims(func(c map[string]any) {
+		c["product_role"] = "viewer"
+		c["permissions"] = []string{"domains.read", "logs.read"}
+	})))
+	if err != nil || id.ProductRole != "viewer" || !id.Can("domains.read") || id.Can("domains.write") {
+		t.Fatalf("permissions from the token: %+v %v", id, err)
+	}
+	withID := kit.WithIdentity(ctx, id)
+	if err := kit.RequirePermission(withID, "logs.read"); err != nil {
+		t.Errorf("granted permission: %v", err)
+	}
+	if err := kit.RequirePermission(withID, "domains.write"); !errors.Is(err, kit.ErrForbidden) {
+		t.Errorf("missing permission: want ErrForbidden, got %v", err)
+	}
+	if err := kit.RequirePermission(ctx, "logs.read"); !errors.Is(err, kit.ErrNoToken) {
+		t.Errorf("no identity: want ErrNoToken, got %v", err)
+	}
+	// A service that declares no permissions: nothing is granted.
+	plain, err := v.Verify(ctx, f.sign("k1", f.claims(nil)))
+	if err != nil || plain.Can("domains.read") || plain.ProductRole != "" {
+		t.Fatalf("no permission claims: %+v %v", plain, err)
+	}
+}
