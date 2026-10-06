@@ -37,6 +37,9 @@ type Entitlements struct {
 	Entitlements      map[string]any `json:"entitlements"`
 	CurrentPeriodEnd  *time.Time     `json:"current_period_end,omitempty"`
 	CancelAtPeriodEnd bool           `json:"cancel_at_period_end,omitempty"`
+	// TrialUsed: the account has had this product before, so a checkout
+	// starts no trial (one per account and product).
+	TrialUsed bool `json:"trial_used"`
 }
 
 // APIError is a non-2xx answer from the kit.
