@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer } from "../src/index.js";
+import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError } from "../src/index.js";
 import { base64url, utf8 } from "../src/encoding.js";
 
 // A stand-in kit: discovery + JWKS over HTTP, keys the test controls.
@@ -100,6 +100,25 @@ test("verifies the kit's tokens and refuses everything else", async (t) => {
   const again = await kit.sign(good(kit.issuer, { exp: clock / 1000 + 900 }), { kid: "k2" });
   assert.equal((await v.verify(again)).accountId, "acc-1");
   assert.equal(kit.hits(), before + 1);
+});
+
+test("permissions in the service: the same checks as the Go SDK", async (t) => {
+  const kit = await fakeKit();
+  t.after(() => kit.server.close());
+  const v = await createVerifier({ issuer: kit.issuer, clientId: "mail", now: () => now });
+  const id = await v.verify(await kit.sign(good(kit.issuer, { product_role: "viewer", permissions: ["domains.read", "logs.read"] })));
+  assert.equal(id.productRole, "viewer");
+  assert.deepEqual(id.permissions, ["domains.read", "logs.read"]);
+  assert.equal(can(id, "domains.read"), true);
+  assert.equal(can(id, "domains.write"), false);
+  requirePermission(id, "logs.read");
+  assert.throws(() => requirePermission(id, "domains.write"), ForbiddenError);
+  // A service that declares no permissions grants nothing; junk is ignored.
+  const plain = await v.verify(await kit.sign(good(kit.issuer)));
+  assert.equal(plain.productRole, "");
+  assert.deepEqual(plain.permissions, []);
+  const junk = await v.verify(await kit.sign(good(kit.issuer, { permissions: ["a.read", 7, null] })));
+  assert.deepEqual(junk.permissions, ["a.read"]);
 });
 
 test("discovery must name the same issuer", async (t) => {

@@ -19,6 +19,13 @@ export interface Identity {
   /** The account's plan and entitlements in this service when the token was issued (≤ 15 min old). */
   plan: string;
   entitlements: Record<string, number | boolean>;
+  /**
+   * The caller's role and permissions in this service (doc 07 G172) when its
+   * manifest declares them; "" and [] otherwise. As old as the token;
+   * KitClient.permissions is real time.
+   */
+  productRole: string;
+  permissions: string[];
 }
 
 export class KitTokenError extends Error {
@@ -55,6 +62,27 @@ export function require(id: Identity, key: string, n = 1): void {
     return;
   }
   if (typeof v !== "number" || n > v) throw new NotEntitledError(key);
+}
+
+/** can reports whether the caller has a permission in this service. */
+export function can(id: Identity, permission: string): boolean {
+  return id.permissions.includes(permission);
+}
+
+export class ForbiddenError extends Error {
+  constructor(readonly permission: string) {
+    super(`kit: your role does not allow this: ${permission}`);
+    this.name = "ForbiddenError";
+  }
+}
+
+/**
+ * requirePermission throws ForbiddenError (answer 403) unless the caller's
+ * role in this service grants the permission. For an action that must not
+ * rest on a token up to 15 minutes old, ask KitClient.permissions.
+ */
+export function requirePermission(id: Identity, permission: string): void {
+  if (!can(id, permission)) throw new ForbiddenError(permission);
 }
 
 export interface VerifierOptions {
@@ -169,6 +197,10 @@ export async function createVerifier(o: VerifierOptions): Promise<Verifier> {
         expiresAt: new Date(exp),
         plan: String(claims.plan ?? ""),
         entitlements: (claims.entitlements ?? {}) as Record<string, number | boolean>,
+        productRole: typeof claims.product_role === "string" ? claims.product_role : "",
+        permissions: Array.isArray(claims.permissions)
+          ? claims.permissions.filter((p: unknown): p is string => typeof p === "string")
+          : [],
       };
     },
   };

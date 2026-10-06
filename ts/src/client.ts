@@ -21,8 +21,20 @@ export interface Entitlements {
 export interface Member {
   user_id: string;
   email: string;
+  /** In the account: owner | admin | member. */
   role: string;
   joined_at: string;
+  /** The member's role in this service when it declares roles (G172). */
+  product_role?: string;
+  /** false while product_role is the default for their account role. */
+  product_role_assigned?: boolean;
+}
+
+/** The caller's role and permissions in this service, read at the time of the call. */
+export interface Grant {
+  product: string;
+  role: string;
+  permissions: string[];
 }
 
 export interface Invitation {
@@ -108,6 +120,19 @@ export class KitClient {
 
   async setRole(token: string, userId: string, role: Role): Promise<void> {
     await this.call("PATCH", "/api/v1/members/" + encodeURIComponent(userId), token, { role });
+  }
+
+  /** permissions answers the caller's role and permissions in this service now. */
+  permissions(token: string): Promise<Grant> {
+    return this.call("GET", "/api/v1/permissions", token);
+  }
+
+  /**
+   * setProductRole assigns a member's role in this service (owners and admins;
+   * an admin cannot change an owner's). "" returns them to the default.
+   */
+  async setProductRole(token: string, userId: string, role: string): Promise<void> {
+    await this.call("PATCH", "/api/v1/members/" + encodeURIComponent(userId) + "/product-role", token, { role });
   }
 
   /** removeMember removes a member — with the caller's own user id, leaves. */

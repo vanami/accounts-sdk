@@ -36,7 +36,15 @@ type Identity struct {
 	// was issued (it lives 15 minutes; Client.Entitlements is real time).
 	Plan         string
 	Entitlements map[string]any
+	// ProductRole and Permissions are the caller's role and permissions in
+	// this service (doc 07 G172), when its manifest declares them; empty
+	// otherwise. As old as the token; Client.Permissions is real time.
+	ProductRole string
+	Permissions []string
 }
+
+// Can reports whether the caller has a permission in this service.
+func (id Identity) Can(permission string) bool { return slices.Contains(id.Permissions, permission) }
 
 // Limit answers an integer entitlement ("domains": 10). ok is false when
 // the plan does not grant it at all.
@@ -85,6 +93,26 @@ func Require(ctx context.Context, key string, n int64) error {
 	limit, ok := id.Limit(key)
 	if !ok || n > limit {
 		return fmt.Errorf("%w: %s (needs %d, plan allows %d)", ErrNotEntitled, key, n, limit)
+	}
+	return nil
+}
+
+// ErrForbidden is what RequirePermission answers when the caller's role in
+// the service does not grant the permission (answer 403).
+var ErrForbidden = errors.New("kit: your role does not allow this")
+
+// RequirePermission checks that the caller (from Middleware) has a
+// permission in this service. For an action that must not rest on a token
+// up to 15 minutes old (deleting, exporting), ask Client.Permissions.
+//
+//	if err := kit.RequirePermission(ctx, "aliases.write"); err != nil { … 403 … }
+func RequirePermission(ctx context.Context, permission string) error {
+	id, ok := FromContext(ctx)
+	if !ok {
+		return ErrNoToken
+	}
+	if !id.Can(permission) {
+		return fmt.Errorf("%w: %s", ErrForbidden, permission)
 	}
 	return nil
 }
@@ -225,6 +253,8 @@ type claims struct {
 	AccountRole  string         `json:"account_role"`
 	Plan         string         `json:"plan"`
 	Entitlements map[string]any `json:"entitlements"`
+	ProductRole  string         `json:"product_role"`
+	Permissions  []string       `json:"permissions"`
 }
 
 // Verify checks a raw access token: RS256 signature by a published kit key,
@@ -262,7 +292,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
 	}
 	return Identity{UserID: c.Subject, AccountID: c.AccountID, Role: c.AccountRole,
 		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0),
-		Plan: c.Plan, Entitlements: c.Entitlements}, nil
+		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions}, nil
 }
 
 type ctxKey struct{}
