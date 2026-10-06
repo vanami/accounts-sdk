@@ -16,6 +16,8 @@ export interface Entitlements {
   entitlements: Record<string, number | boolean>;
   current_period_end?: string;
   cancel_at_period_end?: boolean;
+  /** The account has had this product before: a checkout starts no trial (one per account and product). */
+  trial_used?: boolean;
 }
 
 export interface Member {
