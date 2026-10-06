@@ -66,13 +66,16 @@ type AccountData struct {
 
 // SubscriptionData is the data of subscription.changed.
 type SubscriptionData struct {
-	AccountID         string     `json:"account_id"`
-	Product           string     `json:"product"`
-	Plan              string     `json:"plan"`
-	Status            string     `json:"status"`
-	Entitled          bool       `json:"entitled"` // the plan's entitlements apply
-	CurrentPeriodEnd  *time.Time `json:"current_period_end,omitempty"`
-	CancelAtPeriodEnd bool       `json:"cancel_at_period_end"`
+	AccountID string `json:"account_id"`
+	Product   string `json:"product"`
+	Plan      string `json:"plan"`
+	Status    string `json:"status"`
+	Entitled  bool   `json:"entitled"` // the plan's entitlements apply
+	// Entitlements are those that now apply: the plan's while entitled, else
+	// the free plan's — for work done without a user's token.
+	Entitlements      map[string]any `json:"entitlements,omitempty"`
+	CurrentPeriodEnd  *time.Time     `json:"current_period_end,omitempty"`
+	CancelAtPeriodEnd bool           `json:"cancel_at_period_end"`
 }
 
 // VerifyEvent checks the signature header against the raw body and decodes

@@ -45,6 +45,8 @@ export interface SubscriptionData {
   plan: string;
   status: string;
   entitled: boolean;
+  /** The entitlements that now apply (the plan's while entitled, else the free plan's) — for work done without a user's token. */
+  entitlements?: Record<string, number | boolean>;
   current_period_end?: string | null;
   cancel_at_period_end: boolean;
 }
