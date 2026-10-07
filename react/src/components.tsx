@@ -5,12 +5,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 
-export type Locale = "sv" | "en";
-
-const labels = {
-  en: { signIn: "Sign in", account: "Account", switchAccount: "Switch account", signOut: "Sign out" },
-  sv: { signIn: "Logga in", account: "Konto", switchAccount: "Byt konto", signOut: "Logga ut" },
-} satisfies Record<Locale, Record<string, string>>;
+const labels = { signIn: "Sign in", account: "Account", switchAccount: "Switch account", signOut: "Sign out" };
 
 export interface SignInButtonProps {
   /** Your route that starts the sign-in (with a server), e.g. "/auth/kit/start". Omit with onClick. */
@@ -21,14 +16,13 @@ export interface SignInButtonProps {
   prompt?: "login" | "select_account";
   /** Where to land after signing in (your route passes it on as `next`). */
   next?: string;
-  locale?: Locale;
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
 }
 
-export function SignInButton({ href, onClick, prompt, next, locale = "en", className, style, children }: SignInButtonProps) {
-  const text = children ?? labels[locale].signIn;
+export function SignInButton({ href, onClick, prompt, next, className, style, children }: SignInButtonProps) {
+  const text = children ?? labels.signIn;
   if (href !== undefined) {
     const q = new URLSearchParams();
     if (prompt) q.set("prompt", prompt);
@@ -59,7 +53,6 @@ export interface AccountMenuProps {
   signOutAction?: string;
   /** Without a server: e.g. () => signOut(location.origin) from useKit(). */
   onSignOut?: () => void;
-  locale?: Locale;
   className?: string;
 }
 
@@ -68,8 +61,8 @@ export interface AccountMenuProps {
  * the account page, the account switcher and sign-out. A <details>
  * disclosure: no JavaScript needed, so it renders on the server too.
  */
-export function AccountMenu({ email, accountName, accountHref, switchAccountHref, signOutAction, onSignOut, locale = "en", className }: AccountMenuProps) {
-  const t = labels[locale];
+export function AccountMenu({ email, accountName, accountHref, switchAccountHref, signOutAction, onSignOut, className }: AccountMenuProps) {
+  const t = labels;
   const initial = (accountName || email).trim().charAt(0).toUpperCase();
   return (
     <details className={className} data-kit="account-menu" style={{ position: "relative" }}>

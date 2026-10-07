@@ -185,7 +185,8 @@ func (c *Client) SetRequireMFA(ctx context.Context, accessToken string, required
 }
 
 // Invite mails an invitation to the token's account (owners invite any
-// role; admins invite admins and members). locale is the mail's: sv or en.
+// role; admins invite admins and members). locale is ignored: the kit's
+// mails are in English.
 func (c *Client) Invite(ctx context.Context, accessToken, email, role, locale string) (Invitation, error) {
 	var out Invitation
 	err := c.call(ctx, http.MethodPost, "/api/v1/invitations", accessToken,

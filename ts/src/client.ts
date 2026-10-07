@@ -121,7 +121,8 @@ export class KitClient {
     await this.call("PATCH", "/api/v1/account", token, { require_mfa: required });
   }
 
-  invite(token: string, email: string, role: Role, locale?: "sv" | "en"): Promise<Invitation> {
+  /** locale is ignored: the kit's mails are in English. */
+  invite(token: string, email: string, role: Role, locale?: string): Promise<Invitation> {
     return this.call("POST", "/api/v1/invitations", token, { email, role, ...(locale ? { locale } : {}) });
   }
 
