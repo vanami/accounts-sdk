@@ -129,6 +129,8 @@ type Account struct {
 	Invitations []Invitation `json:"invitations,omitempty"`
 	// RequireMFA: every member signs in with two steps (SetRequireMFA).
 	RequireMFA bool `json:"require_mfa"`
+	// BillingEmail: where invoices go (owners and admins see it).
+	BillingEmail string `json:"billing_email,omitempty"`
 }
 
 type Member struct {
@@ -182,6 +184,13 @@ func (c *Client) RenameAccount(ctx context.Context, accessToken, name string) er
 // their next sign-in; one-step sessions are not extended.
 func (c *Client) SetRequireMFA(ctx context.Context, accessToken string, required bool) error {
 	return c.call(ctx, http.MethodPatch, "/api/v1/account", accessToken, map[string]bool{"require_mfa": required}, nil)
+}
+
+// SetBillingEmail sets where the organisation's invoices and receipts go
+// (owners and admins; "" = the buyer's address). It may be an address
+// without an account.
+func (c *Client) SetBillingEmail(ctx context.Context, accessToken, email string) error {
+	return c.call(ctx, http.MethodPatch, "/api/v1/account", accessToken, map[string]string{"billing_email": email}, nil)
 }
 
 // Invite mails an invitation to the token's account (owners invite any
