@@ -6,20 +6,20 @@ import { KitProvider, SignedIn, SignedOut } from "../src/react.js";
 import { KitSession } from "../src/session.js";
 
 test("SignInButton: a link to your route, with prompt and next; or a button", () => {
-  const a = renderToStaticMarkup(<SignInButton href="/auth/kit/start" prompt="select_account" next="/app" locale="sv" />);
-  assert.match(a, /<a href="\/auth\/kit\/start\?prompt=select_account&amp;next=%2Fapp"[^>]*>Logga in<\/a>/);
+  const a = renderToStaticMarkup(<SignInButton href="/auth/kit/start" prompt="select_account" next="/app" />);
+  assert.match(a, /<a href="\/auth\/kit\/start\?prompt=select_account&amp;next=%2Fapp"[^>]*>Sign in<\/a>/);
   const b = renderToStaticMarkup(<SignInButton onClick={() => {}}>Start</SignInButton>);
   assert.match(b, /<button type="button"[^>]*>Start<\/button>/);
 });
 
 test("AccountMenu: who, which organisation, account, switch, sign-out by POST", () => {
   const m = renderToStaticMarkup(
-    <AccountMenu email="anna@kund.se" accountName="Kund AB" accountHref="/app/account" switchAccountHref="/auth/kit/start?prompt=select_account" signOutAction="/auth/logout" locale="sv" />,
+    <AccountMenu email="anna@kund.se" accountName="Kund AB" accountHref="/app/account" switchAccountHref="/auth/kit/start?prompt=select_account" signOutAction="/auth/logout" />,
   );
-  for (const want of ["anna@kund.se", "Kund AB", 'href="/app/account"', ">Konto<", ">Byt konto<", 'action="/auth/logout"', 'method="post"', ">Logga ut<", ">K<"]) {
+  for (const want of ["anna@kund.se", "Kund AB", 'href="/app/account"', ">Account<", ">Switch account<", 'action="/auth/logout"', 'method="post"', ">Sign out<", ">K<"]) {
     assert.ok(m.includes(want), `menu shows ${want}`);
   }
-  assert.ok(!renderToStaticMarkup(<AccountMenu email="b@x.se" />).includes("Logga ut"), "no sign-out without an action");
+  assert.ok(!renderToStaticMarkup(<AccountMenu email="b@x.se" />).includes("Sign out"), "no sign-out without an action");
 });
 
 test("SignedIn / SignedOut follow the session", () => {
