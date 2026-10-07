@@ -61,6 +61,8 @@ export interface Account {
   invitations?: Invitation[];
   /** Every member signs in with two steps (setRequireMFA). */
   require_mfa: boolean;
+  /** Where invoices go (owners and admins see it). */
+  billing_email?: string;
 }
 
 export interface AccountSummary {
@@ -119,6 +121,11 @@ export class KitClient {
   /** setRequireMFA makes two-step verification a rule for the account (owners and admins). */
   async setRequireMFA(token: string, required: boolean): Promise<void> {
     await this.call("PATCH", "/api/v1/account", token, { require_mfa: required });
+  }
+
+  /** setBillingEmail sets where invoices go (owners and admins; "" = the buyer's address). */
+  async setBillingEmail(token: string, email: string): Promise<void> {
+    await this.call("PATCH", "/api/v1/account", token, { billing_email: email });
   }
 
   /** locale is ignored: the kit's mails are in English. */
