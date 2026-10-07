@@ -127,6 +127,8 @@ type Account struct {
 	Role        string       `json:"role"` // the caller's
 	Members     []Member     `json:"members"`
 	Invitations []Invitation `json:"invitations,omitempty"`
+	// RequireMFA: every member signs in with two steps (SetRequireMFA).
+	RequireMFA bool `json:"require_mfa"`
 }
 
 type Member struct {
@@ -139,6 +141,8 @@ type Member struct {
 	// for their account role.
 	ProductRole         string `json:"product_role,omitempty"`
 	ProductRoleAssigned bool   `json:"product_role_assigned,omitempty"`
+	// MFA: the member has two-step verification on.
+	MFA bool `json:"mfa"`
 }
 
 // Grant is the caller's role and permissions in this service, read from
@@ -171,6 +175,13 @@ func (c *Client) Account(ctx context.Context, accessToken string) (Account, erro
 // RenameAccount renames the token's account (owners and admins).
 func (c *Client) RenameAccount(ctx context.Context, accessToken, name string) error {
 	return c.call(ctx, http.MethodPatch, "/api/v1/account", accessToken, map[string]string{"name": name}, nil)
+}
+
+// SetRequireMFA makes two-step verification a rule for every member of
+// the token's account (owners and admins). Members without it set it up at
+// their next sign-in; one-step sessions are not extended.
+func (c *Client) SetRequireMFA(ctx context.Context, accessToken string, required bool) error {
+	return c.call(ctx, http.MethodPatch, "/api/v1/account", accessToken, map[string]bool{"require_mfa": required}, nil)
 }
 
 // Invite mails an invitation to the token's account (owners invite any

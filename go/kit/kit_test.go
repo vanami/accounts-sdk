@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -166,5 +167,29 @@ func TestPermissions(t *testing.T) {
 	plain, err := v.Verify(ctx, f.sign("k1", f.claims(nil)))
 	if err != nil || plain.Can("domains.read") || plain.ProductRole != "" {
 		t.Fatalf("no permission claims: %+v %v", plain, err)
+	}
+}
+
+// How the user signed in: MFA only with "mfa" in amr (both SDKs).
+func TestMFA(t *testing.T) {
+	f := newFakeKit(t)
+	ctx := context.Background()
+	v, err := kit.NewVerifier(ctx, f.ts.URL, "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := v.Verify(ctx, f.sign("k1", f.claims(func(c map[string]any) { c["amr"] = []string{"pwd", "otp", "mfa"} })))
+	if err != nil || !two.MFA() || !slices.Equal(two.AMR, []string{"pwd", "otp", "mfa"}) {
+		t.Fatalf("two steps: %+v %v", two, err)
+	}
+	for _, amr := range []any{[]string{"pwd"}, nil} {
+		one, err := v.Verify(ctx, f.sign("k1", f.claims(func(c map[string]any) {
+			if amr != nil {
+				c["amr"] = amr
+			}
+		})))
+		if err != nil || one.MFA() {
+			t.Fatalf("one step (%v): %+v %v", amr, one, err)
+		}
 	}
 }
