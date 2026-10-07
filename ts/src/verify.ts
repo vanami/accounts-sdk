@@ -26,6 +26,8 @@ export interface Identity {
    */
   productRole: string;
   permissions: string[];
+  /** How the user signed in (RFC 8176: pwd, otp, hwk, fed, mfa, …). */
+  amr: string[];
 }
 
 export class KitTokenError extends Error {
@@ -65,6 +67,11 @@ export function require(id: Identity, key: string, n = 1): void {
 }
 
 /** can reports whether the caller has a permission in this service. */
+/** mfa: the sign-in had two steps (a passkey, or a second factor after the first). */
+export function mfa(id: Identity): boolean {
+  return id.amr.includes("mfa");
+}
+
 export function can(id: Identity, permission: string): boolean {
   return id.permissions.includes(permission);
 }
@@ -201,6 +208,7 @@ export async function createVerifier(o: VerifierOptions): Promise<Verifier> {
         permissions: Array.isArray(claims.permissions)
           ? claims.permissions.filter((p: unknown): p is string => typeof p === "string")
           : [],
+        amr: Array.isArray(claims.amr) ? claims.amr.filter((m: unknown): m is string => typeof m === "string") : [],
       };
     },
   };

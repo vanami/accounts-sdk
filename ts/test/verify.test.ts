@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError } from "../src/index.js";
+import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa } from "../src/index.js";
 import { base64url, utf8 } from "../src/encoding.js";
 
 // A stand-in kit: discovery + JWKS over HTTP, keys the test controls.
@@ -119,6 +119,20 @@ test("permissions in the service: the same checks as the Go SDK", async (t) => {
   assert.deepEqual(plain.permissions, []);
   const junk = await v.verify(await kit.sign(good(kit.issuer, { permissions: ["a.read", 7, null] })));
   assert.deepEqual(junk.permissions, ["a.read"]);
+});
+
+test("mfa: only with mfa in amr, the same checks as the Go SDK", async (t) => {
+  const kit = await fakeKit();
+  t.after(() => kit.server.close());
+  const v = await createVerifier({ issuer: kit.issuer, clientId: "mail", now: () => now });
+  const two = await v.verify(await kit.sign(good(kit.issuer, { amr: ["pwd", "otp", "mfa"] })));
+  assert.deepEqual(two.amr, ["pwd", "otp", "mfa"]);
+  assert.equal(mfa(two), true);
+  assert.equal(mfa(await v.verify(await kit.sign(good(kit.issuer, { amr: ["pwd"] })))), false);
+  const none = await v.verify(await kit.sign(good(kit.issuer)));
+  assert.deepEqual(none.amr, []);
+  assert.equal(mfa(none), false);
+  assert.equal(mfa(await v.verify(await kit.sign(good(kit.issuer, { amr: ["mfa", 3] })))), true);
 });
 
 test("discovery must name the same issuer", async (t) => {

@@ -30,6 +30,8 @@ export interface Member {
   product_role?: string;
   /** false while product_role is the default for their account role. */
   product_role_assigned?: boolean;
+  /** The member has two-step verification on. */
+  mfa: boolean;
 }
 
 /** The caller's role and permissions in this service, read at the time of the call. */
@@ -57,6 +59,8 @@ export interface Account {
   members: Member[];
   /** Owners and admins only. */
   invitations?: Invitation[];
+  /** Every member signs in with two steps (setRequireMFA). */
+  require_mfa: boolean;
 }
 
 export interface AccountSummary {
@@ -110,6 +114,11 @@ export class KitClient {
 
   async renameAccount(token: string, name: string): Promise<void> {
     await this.call("PATCH", "/api/v1/account", token, { name });
+  }
+
+  /** setRequireMFA makes two-step verification a rule for the account (owners and admins). */
+  async setRequireMFA(token: string, required: boolean): Promise<void> {
+    await this.call("PATCH", "/api/v1/account", token, { require_mfa: required });
   }
 
   invite(token: string, email: string, role: Role, locale?: "sv" | "en"): Promise<Invitation> {

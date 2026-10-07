@@ -41,7 +41,13 @@ type Identity struct {
 	// otherwise. As old as the token; Client.Permissions is real time.
 	ProductRole string
 	Permissions []string
+	// AMR is how the user signed in (RFC 8176: pwd, otp, hwk, fed, mfa, …).
+	AMR []string
 }
+
+// MFA reports whether the sign-in had two steps (a passkey, or a second
+// factor after the first) — for actions a service wants to protect more.
+func (id Identity) MFA() bool { return slices.Contains(id.AMR, "mfa") }
 
 // Can reports whether the caller has a permission in this service.
 func (id Identity) Can(permission string) bool { return slices.Contains(id.Permissions, permission) }
@@ -255,6 +261,7 @@ type claims struct {
 	Entitlements map[string]any `json:"entitlements"`
 	ProductRole  string         `json:"product_role"`
 	Permissions  []string       `json:"permissions"`
+	AMR          []string       `json:"amr"`
 }
 
 // Verify checks a raw access token: RS256 signature by a published kit key,
@@ -292,7 +299,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
 	}
 	return Identity{UserID: c.Subject, AccountID: c.AccountID, Role: c.AccountRole,
 		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0),
-		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions}, nil
+		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions, AMR: c.AMR}, nil
 }
 
 type ctxKey struct{}
