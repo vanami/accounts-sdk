@@ -18,6 +18,11 @@ import (
 type Client struct {
 	Issuer string
 	HTTP   *http.Client // nil = 15s timeout
+	// Product and ServiceSecret sign the service's own calls (usage, from
+	// a background job with no user): the product id and the secret it
+	// verifies the kit's events with (`accounts webhook-secret <product>`).
+	Product       string
+	ServiceSecret string
 }
 
 // CheckoutRequest starts a subscription purchase. The return URLs must be
@@ -100,7 +105,19 @@ func (c *Client) call(ctx context.Context, method, path, token string, body, out
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	} else { // a service call: signed with the product's secret
+		if c.Product == "" || c.ServiceSecret == "" {
+			return errors.New("kit: a service call needs Client.Product and Client.ServiceSecret")
+		}
+		var b []byte
+		if body != nil {
+			b, _ = json.Marshal(body)
+		}
+		req.Header.Set("Kit-Product", c.Product)
+		req.Header.Set("Kit-Signature", signService(c.ServiceSecret, time.Now(), method, req.URL.RequestURI(), b))
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

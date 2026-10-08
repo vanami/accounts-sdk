@@ -1,3 +1,4 @@
+import { buf, utf8 } from "./encoding.js";
 // The kit's API, called with the signed-in user's access token — from the
 // service's backend, or from its front end (CORS allows the service's own
 // origins).
@@ -89,13 +90,58 @@ export function isSeatLimit(e: unknown): boolean {
   return e instanceof KitAPIError && e.status === 409 && e.code === "seat_limit";
 }
 
+/** An account's use of one meter this calendar month (UTC), as the Go SDK's MeterUsage. */
+export interface MeterUsage {
+  meter: string;
+  used: number;
+  included: number;
+  /** Minor units per unit beyond included (absent = none: included is a cap — see remaining). */
+  overage?: number;
+  currency?: string;
+  /** The plan caps this meter; false = unlimited, or overage billed. */
+  limited: boolean;
+  period_start: string;
+  period_end: string;
+}
+
+/** remaining: units left under a cap; undefined when the meter has no cap. The same as the Go SDK's Remaining. */
+export function remaining(u: MeterUsage): number | undefined {
+  return u.limited ? Math.max(u.included - u.used, 0) : undefined;
+}
+
 export class KitClient {
   private readonly issuer: string;
   private readonly f: typeof fetch;
+  private readonly product?: string;
+  private readonly serviceSecret?: string;
 
-  constructor(o: { issuer: string; fetch?: typeof fetch }) {
+  /**
+   * product and serviceSecret sign the service's own calls (usage, from a
+   * background job with no user): the product id and the secret it
+   * verifies the kit's events with (`accounts webhook-secret <product>`).
+   */
+  constructor(o: { issuer: string; fetch?: typeof fetch; product?: string; serviceSecret?: string }) {
     this.issuer = o.issuer.replace(/\/+$/, "");
     this.f = o.fetch ?? globalThis.fetch.bind(globalThis);
+    this.product = o.product;
+    this.serviceSecret = o.serviceSecret;
+  }
+
+  /** reportUsage: account used quantity of meter. The key makes a retry safe (recorded = false for a repeat). A service call. */
+  async reportUsage(accountId: string, meter: string, quantity: number, idempotencyKey: string): Promise<boolean> {
+    const out = await this.call<{ recorded: boolean }>("POST", "/api/v1/usage", undefined,
+      { account_id: accountId, meter, quantity, idempotency_key: idempotencyKey });
+    return out.recorded;
+  }
+
+  /** usage: this month's use per meter for the token's account. */
+  async usage(token: string): Promise<MeterUsage[]> {
+    return (await this.call<{ meters: MeterUsage[] }>("GET", "/api/v1/usage", token)).meters;
+  }
+
+  /** usageFor: usage for any account of the service (a signed service call). */
+  async usageFor(accountId: string): Promise<MeterUsage[]> {
+    return (await this.call<{ meters: MeterUsage[] }>("GET", "/api/v1/usage?" + new URLSearchParams({ account_id: accountId }), undefined)).meters;
   }
 
   /** checkout answers the Stripe Checkout URL (owners and admins; return URLs on the service's own origins). */
@@ -167,12 +213,18 @@ export class KitClient {
     await this.call("DELETE", "/api/v1/members/" + encodeURIComponent(userId), token);
   }
 
-  private async call<T>(method: string, path: string, token: string, body?: unknown): Promise<T> {
-    const res = await this.f(this.issuer + path, {
-      method,
-      headers: { Authorization: "Bearer " + token, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+  private async call<T>(method: string, path: string, token: string | undefined, body?: unknown): Promise<T> {
+    const raw = body !== undefined ? JSON.stringify(body) : undefined;
+    const headers: Record<string, string> = raw !== undefined ? { "Content-Type": "application/json" } : {};
+    if (token !== undefined) {
+      headers.Authorization = "Bearer " + token;
+    } else {
+      // A service call: signed with the product's secret.
+      if (!this.product || !this.serviceSecret) throw new Error("kit: a service call needs product and serviceSecret");
+      headers["Kit-Product"] = this.product;
+      headers["Kit-Signature"] = await signService(this.serviceSecret, Math.floor(Date.now() / 1000), method, new URL(this.issuer + path).pathname + new URL(this.issuer + path).search, raw ?? "");
+    }
+    const res = await this.f(this.issuer + path, { method, headers, body: raw });
     if (!res.ok) {
       const e = (await res.json().catch(() => ({}))) as { error?: string };
       throw new KitAPIError(res.status, e.error ?? res.statusText);
@@ -180,4 +232,11 @@ export class KitClient {
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   }
+}
+
+/** signService: Kit-Signature for a service call (the kit's own string, never an event signature). */
+export async function signService(secret: string, unix: number, method: string, uri: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", buf(utf8(secret)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(utf8(`${unix}.kit-service.${method} ${uri}\n${body}`))));
+  return `t=${unix},v1=` + Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("");
 }
