@@ -193,3 +193,27 @@ func TestMFA(t *testing.T) {
 		}
 	}
 }
+
+// Seats and the over-limit policy from the token (both SDKs).
+func TestSeats(t *testing.T) {
+	f := newFakeKit(t)
+	ctx := context.Background()
+	v, err := kit.NewVerifier(ctx, f.ts.URL, "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := v.Verify(ctx, f.sign("k1", f.claims(func(c map[string]any) {
+		c["seats"] = map[string]any{"pricing": "flat", "max": 5, "used": 3}
+		c["over_limit"] = "read_only"
+	})))
+	if n, limited := id.SeatsLeft(); err != nil || !limited || n != 2 || id.OverLimit != "read_only" {
+		t.Fatalf("seats: %+v %v", id.Seats, err)
+	}
+	plain, _ := v.Verify(ctx, f.sign("k1", f.claims(nil)))
+	if _, limited := plain.SeatsLeft(); limited {
+		t.Fatal("no seat policy: unlimited")
+	}
+	if !kit.IsSeatLimit(&kit.APIError{Status: 409, Message: "seat_limit"}) || kit.IsSeatLimit(&kit.APIError{Status: 409, Message: "x"}) {
+		t.Fatal("IsSeatLimit")
+	}
+}

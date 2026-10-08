@@ -43,6 +43,30 @@ type Identity struct {
 	Permissions []string
 	// AMR is how the user signed in (RFC 8176: pwd, otp, hwk, fed, mfa, …).
 	AMR []string
+	// Seats: the plan's member policy when it sets one (doc 07 G169); nil
+	// = any number of members. As old as the token.
+	Seats *Seats
+	// OverLimit: what the service does when the account is over its
+	// plan's limits after a downgrade — "block_new" (keep what exists,
+	// nothing new over the limit) or "read_only" (no changes until under).
+	OverLimit string
+}
+
+// Seats is an account's seat use in this service.
+type Seats struct {
+	Pricing  string `json:"pricing"` // flat | per_seat
+	Included int    `json:"included,omitempty"`
+	Max      int    `json:"max,omitempty"` // 0 = no cap
+	Used     int    `json:"used"`
+}
+
+// SeatsLeft answers how many more members fit; limited is false when the
+// plan has no cap (or no seat policy).
+func (id Identity) SeatsLeft() (n int, limited bool) {
+	if id.Seats == nil || id.Seats.Max == 0 {
+		return 0, false
+	}
+	return max(id.Seats.Max-id.Seats.Used, 0), true
 }
 
 // MFA reports whether the sign-in had two steps (a passkey, or a second
@@ -262,6 +286,8 @@ type claims struct {
 	ProductRole  string         `json:"product_role"`
 	Permissions  []string       `json:"permissions"`
 	AMR          []string       `json:"amr"`
+	Seats        *Seats         `json:"seats"`
+	OverLimit    string         `json:"over_limit"`
 }
 
 // Verify checks a raw access token: RS256 signature by a published kit key,
@@ -299,7 +325,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
 	}
 	return Identity{UserID: c.Subject, AccountID: c.AccountID, Role: c.AccountRole,
 		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0),
-		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions, AMR: c.AMR}, nil
+		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions, AMR: c.AMR, Seats: c.Seats, OverLimit: c.OverLimit}, nil
 }
 
 type ctxKey struct{}

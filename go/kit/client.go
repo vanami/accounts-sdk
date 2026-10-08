@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,6 +41,9 @@ type Entitlements struct {
 	// TrialUsed: the account has had this product before, so a checkout
 	// starts no trial (one per account and product).
 	TrialUsed bool `json:"trial_used"`
+	// Seats and OverLimit: see Identity (real time here).
+	Seats     *Seats `json:"seats,omitempty"`
+	OverLimit string `json:"over_limit"`
 }
 
 // APIError is a non-2xx answer from the kit.
@@ -49,6 +53,13 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string { return fmt.Sprintf("kit: %d: %s", e.Status, e.Message) }
+
+// IsSeatLimit: an invitation (or role change) was refused because every
+// seat on the plan is taken — offer an upgrade (G169).
+func IsSeatLimit(err error) bool {
+	var e *APIError
+	return errors.As(err, &e) && e.Status == 409 && e.Message == "seat_limit"
+}
 
 // Checkout answers the Stripe Checkout URL to redirect the buyer to.
 func (c *Client) Checkout(ctx context.Context, accessToken string, in CheckoutRequest) (string, error) {

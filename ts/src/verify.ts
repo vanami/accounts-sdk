@@ -28,6 +28,24 @@ export interface Identity {
   permissions: string[];
   /** How the user signed in (RFC 8176: pwd, otp, hwk, fed, mfa, …). */
   amr: string[];
+  /** The plan's member policy when it sets one (G169); undefined = any number of members. */
+  seats?: Seats;
+  /** After a downgrade below what the account uses: block_new (default) or read_only. */
+  overLimit: string;
+}
+
+export interface Seats {
+  pricing: "flat" | "per_seat";
+  included?: number;
+  /** 0 or absent = no cap. */
+  max?: number;
+  used: number;
+}
+
+/** seatsLeft: how many more members fit; undefined when the plan has no cap. The same as the Go SDK's SeatsLeft. */
+export function seatsLeft(id: Identity): number | undefined {
+  if (!id.seats || !id.seats.max) return undefined;
+  return Math.max(id.seats.max - id.seats.used, 0);
 }
 
 export class KitTokenError extends Error {
@@ -209,6 +227,8 @@ export async function createVerifier(o: VerifierOptions): Promise<Verifier> {
           ? claims.permissions.filter((p: unknown): p is string => typeof p === "string")
           : [],
         amr: Array.isArray(claims.amr) ? claims.amr.filter((m: unknown): m is string => typeof m === "string") : [],
+        seats: seatsOf(claims.seats),
+        overLimit: typeof claims.over_limit === "string" ? claims.over_limit : "block_new",
       };
     },
   };
@@ -218,4 +238,16 @@ export async function createVerifier(o: VerifierOptions): Promise<Verifier> {
 export function bearer(header: string | null | undefined): string | undefined {
   const m = /^Bearer (\S+)$/.exec(header ?? "");
   return m?.[1];
+}
+
+function seatsOf(v: unknown): Seats | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const s = v as Record<string, unknown>;
+  if ((s.pricing !== "flat" && s.pricing !== "per_seat") || typeof s.used !== "number") return undefined;
+  return {
+    pricing: s.pricing,
+    used: s.used,
+    ...(typeof s.included === "number" ? { included: s.included } : {}),
+    ...(typeof s.max === "number" ? { max: s.max } : {}),
+  };
 }

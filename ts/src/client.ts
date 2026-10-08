@@ -18,6 +18,9 @@ export interface Entitlements {
   cancel_at_period_end?: boolean;
   /** The account has had this product before: a checkout starts no trial (one per account and product). */
   trial_used?: boolean;
+  /** See Identity.seats / overLimit (real time here). */
+  seats?: { pricing: "flat" | "per_seat"; included?: number; max?: number; used: number };
+  over_limit?: string;
 }
 
 export interface Member {
@@ -75,10 +78,15 @@ export interface AccountSummary {
 export type Role = "owner" | "admin" | "member";
 
 export class KitAPIError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(`kit: ${status}: ${message}`);
+  constructor(readonly status: number, readonly code: string) {
+    super(`kit: ${status}: ${code}`);
     this.name = "KitAPIError";
   }
+}
+
+/** isSeatLimit: refused because every seat on the plan is taken — offer an upgrade (G169). The same as the Go SDK's IsSeatLimit. */
+export function isSeatLimit(e: unknown): boolean {
+  return e instanceof KitAPIError && e.status === 409 && e.code === "seat_limit";
 }
 
 export class KitClient {
