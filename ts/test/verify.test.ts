@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa } from "../src/index.js";
+import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa, seatsLeft, isSeatLimit, KitAPIError } from "../src/index.js";
 import { base64url, utf8 } from "../src/encoding.js";
 
 // A stand-in kit: discovery + JWKS over HTTP, keys the test controls.
@@ -133,6 +133,20 @@ test("mfa: only with mfa in amr, the same checks as the Go SDK", async (t) => {
   assert.deepEqual(none.amr, []);
   assert.equal(mfa(none), false);
   assert.equal(mfa(await v.verify(await kit.sign(good(kit.issuer, { amr: ["mfa", 3] })))), true);
+});
+
+test("seats and over_limit: the same as the Go SDK", async (t) => {
+  const kit = await fakeKit();
+  t.after(() => kit.server.close());
+  const v = await createVerifier({ issuer: kit.issuer, clientId: "mail", now: () => now });
+  const id = await v.verify(await kit.sign(good(kit.issuer, { seats: { pricing: "flat", max: 5, used: 3 }, over_limit: "read_only" })));
+  assert.equal(seatsLeft(id), 2);
+  assert.equal(id.overLimit, "read_only");
+  const plain = await v.verify(await kit.sign(good(kit.issuer)));
+  assert.equal(seatsLeft(plain), undefined);
+  assert.equal(plain.overLimit, "block_new");
+  assert.equal(isSeatLimit(new KitAPIError(409, "seat_limit")), true);
+  assert.equal(isSeatLimit(new KitAPIError(409, "other")), false);
 });
 
 test("discovery must name the same issuer", async (t) => {
