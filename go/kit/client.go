@@ -85,6 +85,19 @@ func (c *Client) Portal(ctx context.Context, accessToken, returnURL string) (str
 	return out.URL, err
 }
 
+// PortalToPlan answers a Stripe Customer Portal URL that opens on changing
+// the account's subscription to plan (interval month or year), for the
+// customer to confirm. Without a subscription to change it answers 409:
+// a first purchase goes through Checkout.
+func (c *Client) PortalToPlan(ctx context.Context, accessToken, returnURL, plan, interval string) (string, error) {
+	var out struct {
+		URL string `json:"url"`
+	}
+	err := c.call(ctx, http.MethodPost, "/api/v1/portal", accessToken,
+		map[string]string{"return_url": returnURL, "plan": plan, "interval": interval}, &out)
+	return out.URL, err
+}
+
 // Entitlements answers the account's plan and entitlements now.
 func (c *Client) Entitlements(ctx context.Context, accessToken string) (Entitlements, error) {
 	var out Entitlements
