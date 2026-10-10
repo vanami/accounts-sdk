@@ -42,7 +42,7 @@ export interface UseKit extends Snapshot {
   signOut: KitSession["signOut"];
   /** A fresh access token for calling your API or the kit's; undefined when signed out. */
   getAccessToken: KitSession["getAccessToken"];
-  /** The kit's API (checkout, portal, team, permissions) — pass it getAccessToken()'s token. */
+  /** The kit's API (checkout, team, permissions) — pass it getAccessToken()'s token. */
   client: KitClient;
 }
 

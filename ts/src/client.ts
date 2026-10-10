@@ -163,16 +163,6 @@ export class KitClient {
     return u;
   }
 
-  /**
-   * portal answers the Stripe Customer Portal URL. With a plan it opens on
-   * changing the account's subscription to that plan, for the customer to
-   * confirm (409 without a subscription to change: buy through checkout).
-   * @deprecated Link to billingURL, the kit's own billing page (G193).
-   */
-  async portal(token: string, returnURL: string, to?: { plan: string; interval?: "month" | "year" }): Promise<string> {
-    return (await this.call<{ url: string }>("POST", "/api/v1/portal", token, { return_url: returnURL, ...to })).url;
-  }
-
   /** entitlements: the account's plan in this service, in real time. */
   entitlements(token: string): Promise<Entitlements> {
     return this.call("GET", "/api/v1/entitlements", token);
