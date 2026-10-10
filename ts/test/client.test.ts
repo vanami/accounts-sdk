@@ -35,3 +35,12 @@ test("calls the kit API with the user's token and maps errors", async () => {
   assert.deepEqual(seen[2]?.body, { role: "admin" });
   assert.deepEqual(seen[4]?.body, { email: "a@b.se", role: "member", locale: "sv" });
 });
+
+test("billingURL links to the kit's billing page for the account and service", () => {
+  const c = new KitClient({ issuer: "https://accounts.test/", product: "mail" });
+  assert.equal(c.billingURL("a/1"), "https://accounts.test/account/organisations/a%2F1/billing/mail");
+  assert.equal(c.billingURL("a1", { plan: "business", interval: "year" }),
+    "https://accounts.test/account/organisations/a1/billing/mail/change?plan=business&interval=year");
+  assert.equal(c.billingURL("a1", { plan: "pro" }), "https://accounts.test/account/organisations/a1/billing/mail/change?plan=pro&interval=month");
+  assert.throws(() => new KitClient({ issuer: "https://accounts.test" }).billingURL("a1"), /needs the client's product/);
+});

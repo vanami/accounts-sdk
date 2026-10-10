@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -75,8 +76,29 @@ func (c *Client) Checkout(ctx context.Context, accessToken string, in CheckoutRe
 	return out.URL, err
 }
 
+// BillingURL is the kit's billing page for accountID in this service
+// (c.Product): plan, next payment, card, invoices and billing details, for
+// owners and admins (doc 07 G193). A link to open in the browser, where the
+// user's kit session carries them; with plan (and interval month or year)
+// it opens on confirming the change to that plan. "" without c.Product.
+func (c *Client) BillingURL(accountID, plan, interval string) string {
+	if c.Product == "" || accountID == "" {
+		return ""
+	}
+	u := strings.TrimRight(c.Issuer, "/") + "/account/organisations/" + url.PathEscape(accountID) + "/billing/" + url.PathEscape(c.Product)
+	if plan != "" {
+		if interval == "" {
+			interval = "month"
+		}
+		u += "/change?" + url.Values{"plan": {plan}, "interval": {interval}}.Encode()
+	}
+	return u
+}
+
 // Portal answers the Stripe Customer Portal URL (change plan, card,
 // cancel, receipts).
+//
+// Deprecated: link to BillingURL, the kit's own billing page (G193).
 func (c *Client) Portal(ctx context.Context, accessToken, returnURL string) (string, error) {
 	var out struct {
 		URL string `json:"url"`
@@ -89,6 +111,8 @@ func (c *Client) Portal(ctx context.Context, accessToken, returnURL string) (str
 // the account's subscription to plan (interval month or year), for the
 // customer to confirm. Without a subscription to change it answers 409:
 // a first purchase goes through Checkout.
+//
+// Deprecated: link to BillingURL with the plan (G193).
 func (c *Client) PortalToPlan(ctx context.Context, accessToken, returnURL, plan, interval string) (string, error) {
 	var out struct {
 		URL string `json:"url"`

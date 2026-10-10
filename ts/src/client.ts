@@ -150,9 +150,24 @@ export class KitClient {
   }
 
   /**
+   * billingURL is the kit's billing page for accountId in this service (the
+   * client's product): plan, next payment, card, invoices and billing
+   * details, for owners and admins (doc 07 G193). A link to open in the
+   * browser, where the user's kit session carries them; with a plan it opens
+   * on confirming the change to that plan. Needs `product`.
+   */
+  billingURL(accountId: string, to?: { plan: string; interval?: "month" | "year" }): string {
+    if (!this.product) throw new Error("kit: billingURL needs the client's product");
+    let u = `${this.issuer}/account/organisations/${encodeURIComponent(accountId)}/billing/${encodeURIComponent(this.product)}`;
+    if (to?.plan) u += "/change?" + new URLSearchParams({ plan: to.plan, interval: to.interval ?? "month" });
+    return u;
+  }
+
+  /**
    * portal answers the Stripe Customer Portal URL. With a plan it opens on
    * changing the account's subscription to that plan, for the customer to
    * confirm (409 without a subscription to change: buy through checkout).
+   * @deprecated Link to billingURL, the kit's own billing page (G193).
    */
   async portal(token: string, returnURL: string, to?: { plan: string; interval?: "month" | "year" }): Promise<string> {
     return (await this.call<{ url: string }>("POST", "/api/v1/portal", token, { return_url: returnURL, ...to })).url;
