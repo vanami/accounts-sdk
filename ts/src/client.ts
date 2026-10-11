@@ -21,6 +21,8 @@ export interface Entitlements {
   trial_used?: boolean;
   /** The plan is the kit's own trial from first use (G182b); current_period_end is when it ends. A purchase is still possible. */
   trial?: boolean;
+  /** The plan was given by the operator (G182c), not bought; current_period_end is when it ends (none = for good). */
+  granted?: boolean;
   /** See Identity.seats / overLimit (real time here). */
   seats?: { pricing: "flat" | "per_seat"; included?: number; max?: number; used: number };
   over_limit?: string;
