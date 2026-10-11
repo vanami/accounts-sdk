@@ -1,3 +1,3 @@
-// The kit's TypeScript SDK (sdk/ts). A vendored copy of this package
-// re-points this one file at the vendored SDK (template/scripts/sync-kit-sdk.sh).
-export * from "../../ts/src/index.js";
+// The kit's TypeScript SDK, re-exported so the components and their users
+// share one copy of its classes.
+export * from "@vanami/accounts";

@@ -1,0 +1,47 @@
+# A tag vX.Y.Z releases everything at that version: both npm packages, and the
+# Go module through the tag go/vX.Y.Z (a module in a subdirectory is versioned
+# by tags prefixed with its path). The packages' "version" must already say
+# X.Y.Z (see README, Releasing).
+#
+# npm publishes with trusted publishing (OIDC): no npm token is stored here.
+# Each package on npmjs.com names this repository and this workflow file as
+# its trusted publisher.
+
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write # the go/ tag
+  id-token: write # npm trusted publishing and provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@11.6.2
+      - name: versions match the tag
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          for p in ts react; do
+            got=$(node -p "require('./$p/package.json').version")
+            [ "$got" = "$want" ] || { echo "::error::$p/package.json is $got, the tag is $GITHUB_REF_NAME"; exit 1; }
+          done
+          peer=$(node -p "require('./react/package.json').peerDependencies['@vanami/accounts']")
+          [ "$peer" = "^$want" ] || { echo "::error::react's peer @vanami/accounts is $peer, want ^$want"; exit 1; }
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm publish -w ts
+      - run: npm publish -w react
+      - name: Go module tag
+        run: |
+          git tag "go/$GITHUB_REF_NAME" "$GITHUB_SHA"
+          git push origin "go/$GITHUB_REF_NAME"

@@ -8,7 +8,7 @@
     "strict": true,
     "declaration": true,
     "outDir": "dist",
-    "rootDir": "..",
+    "rootDir": ".",
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true
   },

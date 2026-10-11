@@ -4,7 +4,7 @@
 // expires. Framework-free; the React provider subscribes to it.
 //
 // With a server, do not use this: sign in on the server so tokens stay in
-// httpOnly cookies (see template/), and render SignInButton/AccountMenu
+// httpOnly cookies (the saas-kit template does), and render SignInButton/AccountMenu
 // with props.
 
 import { KitAuth, type KitStorage, type Tokens } from "./kit.js";

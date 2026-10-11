@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { verifyEvent, KitSignatureError, EventMemberAdded } from "../src/index.js";
 
-// The vector internal/events/events_test.go signs with the kit's Go code.
+// The vector the kit's own Go code signs (saas-kit internal/events/events_test.go).
 const body = `{"id":"evt_1","type":"member.added","product":"mail","created_at":"2026-10-01T00:00:00Z","data":{"user_id":"u1"}}`;
 const header = "t=1759300000,v1=7b00e5e89ca2ca499b0c469b96e045bab5e64ae571aeb68d4e94c90d4d4f3325";
 const at = 1759300000 * 1000;

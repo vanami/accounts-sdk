@@ -1,4 +1,4 @@
-module github.com/hallsten/saas-kit/sdk/go
+module github.com/vanami/accounts-sdk/go
 
 go 1.26
 

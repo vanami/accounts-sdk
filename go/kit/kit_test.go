@@ -15,7 +15,7 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 
-	"github.com/hallsten/saas-kit/sdk/go/kit"
+	"github.com/vanami/accounts-sdk/go/kit"
 )
 
 // fakeKit serves discovery + JWKS and signs tokens like the kit does.

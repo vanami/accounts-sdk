@@ -1,15 +1,23 @@
 {
-  "name": "@hallsten/saas-kit",
+  "name": "@vanami/accounts",
   "version": "0.1.0",
-  "description": "TypeScript SDK for the Vanami SaaS kit (accounts): browser sign-in with PKCE, access-token verification, lifecycle events, the kit API.",
-  "license": "UNLICENSED",
-  "private": true,
+  "description": "TypeScript SDK for Vanami accounts (accounts.vanami.com): browser sign-in with PKCE, access-token verification, lifecycle events, the kit API.",
+  "license": "MIT",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } },
-  "files": ["dist/src"],
-  "engines": { "node": ">=20" },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p .",
     "test": "tsc -p . && node --test dist/test/*.test.js"
@@ -17,5 +25,14 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vanami/accounts-sdk.git",
+    "directory": "ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

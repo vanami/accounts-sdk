@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "workspaces": ["ts", "react"],
+  "scripts": {
+    "build": "npm run build -w ts && npm run build -w react",
+    "test": "npm test -w ts && npm test -w react"
+  }
+}
