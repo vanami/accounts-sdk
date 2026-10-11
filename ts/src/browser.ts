@@ -34,6 +34,8 @@ export interface SignInOptions {
   /** "login": ask for the address even with a kit session; "select_account": show the account picker. */
   prompt?: "login" | "select_account";
   loginHint?: string;
+  /** An organisation (account id) to sign in to: a member goes straight in, anyone else gets the picker. */
+  accountHint?: string;
   /** "sv" | "en" — the kit's pages and mail. */
   locale?: string;
   /** Kept with the pending sign-in and handed back by handleCallback (e.g. the page to return to). */
@@ -110,6 +112,7 @@ export class KitAuth {
     });
     if (opts.prompt) q.set("prompt", opts.prompt);
     if (opts.loginHint) q.set("login_hint", opts.loginHint);
+    if (opts.accountHint) q.set("account_hint", opts.accountHint);
     if (opts.locale) q.set("ui_locales", opts.locale);
     return d.authorization_endpoint + "?" + q.toString();
   }

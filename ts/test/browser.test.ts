@@ -89,6 +89,8 @@ test("token errors, refresh, logout, signIn navigates", async () => {
   await assert.rejects(auth.refresh("rt"), /invalid_grant: gone/);
   await auth.signIn({ loginHint: "a@b.se" });
   assert.equal(new URL(went).searchParams.get("login_hint"), "a@b.se");
+  await auth.signIn({ accountHint: "0b6f3c1e-1111-4222-8333-944455556666" });
+  assert.equal(new URL(went).searchParams.get("account_hint"), "0b6f3c1e-1111-4222-8333-944455556666");
   const out = new URL(await auth.logoutURL("idt", "https://mail.test/"));
   assert.equal(out.pathname, "/end_session");
   assert.equal(out.searchParams.get("id_token_hint"), "idt");
