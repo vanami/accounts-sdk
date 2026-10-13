@@ -1,4 +1,5 @@
 import { buf, utf8 } from "./encoding.js";
+import { fetchProduct, type Product } from "./product.js";
 // The kit's API, called with the signed-in user's access token — from the
 // service's backend, or from its front end (CORS allows the service's own
 // origins).
@@ -224,6 +225,13 @@ export class KitClient {
   /** removeMember removes a member — with the caller's own user id, leaves. */
   async removeMember(token: string, userId: string): Promise<void> {
     await this.call("DELETE", "/api/v1/members/" + encodeURIComponent(userId), token);
+  }
+
+  /** catalogue: the product's plans, prices, roles, permissions and entitlements with their names (D-450); product defaults to the client's. Public, cached as the kit allows (a minute). The same as the Go SDK's Catalogue. */
+  async catalogue(product?: string): Promise<Product> {
+    const p = product ?? this.product;
+    if (!p) throw new Error("kit: catalogue needs a product or the client's product");
+    return fetchProduct(this.f, this.issuer, p);
   }
 
   private async call<T>(method: string, path: string, token: string | undefined, body?: unknown): Promise<T> {
