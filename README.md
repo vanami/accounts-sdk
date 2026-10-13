@@ -33,6 +33,13 @@ const verifier = await createVerifier({ issuer: "https://accounts.vanami.com", c
 const identity = await verifier.verify(accessToken);
 ```
 
+## Vanami staff
+
+`Identity.Staff` (Go) / `identity.staff` (TS) is true for Vanami's own people (doc 07 G179),
+and only after a two-step sign-in; the kit keeps one list for every service, and an agent's
+token never carries it. What staff may do is the service's decision: guard it with
+`kit.RequireStaff(ctx)` / `requireStaff(identity)` (403 otherwise), and audit what they do.
+
 ## The product catalogue
 
 What the service sells and who may do what, from the kit instead of a copy of the manifest

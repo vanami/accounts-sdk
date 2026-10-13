@@ -50,6 +50,12 @@ type Identity struct {
 	// plan's limits after a downgrade — "block_new" (keep what exists,
 	// nothing new over the limit) or "read_only" (no changes until under).
 	OverLimit string
+	// Staff: the user is Vanami staff (doc 07 G179), signed in with two
+	// steps. What staff may do is the service's decision; audit it. The
+	// kit sets it only after two steps, and only in a service's own
+	// client's tokens; the SDK also requires MFA. As old as the token
+	// (a removal reaches it within 15 minutes).
+	Staff bool
 }
 
 // Seats is an account's seat use in this service.
@@ -143,6 +149,24 @@ func RequirePermission(ctx context.Context, permission string) error {
 	}
 	if !id.Can(permission) {
 		return fmt.Errorf("%w: %s", ErrForbidden, permission)
+	}
+	return nil
+}
+
+// ErrNotStaff is what RequireStaff answers for anyone but Vanami staff.
+var ErrNotStaff = errors.New("kit: Vanami staff only")
+
+// RequireStaff checks that the caller (from Middleware) is Vanami staff,
+// signed in with two steps (doc 07 G179).
+//
+//	if err := kit.RequireStaff(ctx); err != nil { … 403 … }
+func RequireStaff(ctx context.Context) error {
+	id, ok := FromContext(ctx)
+	if !ok {
+		return ErrNoToken
+	}
+	if !id.Staff {
+		return ErrNotStaff
 	}
 	return nil
 }
@@ -288,6 +312,7 @@ type claims struct {
 	AMR          []string       `json:"amr"`
 	Seats        *Seats         `json:"seats"`
 	OverLimit    string         `json:"over_limit"`
+	Staff        bool           `json:"staff"`
 }
 
 // Verify checks a raw access token: RS256 signature by a published kit key,
@@ -325,7 +350,8 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
 	}
 	return Identity{UserID: c.Subject, AccountID: c.AccountID, Role: c.AccountRole,
 		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0),
-		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions, AMR: c.AMR, Seats: c.Seats, OverLimit: c.OverLimit}, nil
+		Plan: c.Plan, Entitlements: c.Entitlements, ProductRole: c.ProductRole, Permissions: c.Permissions, AMR: c.AMR, Seats: c.Seats, OverLimit: c.OverLimit,
+		Staff: c.Staff && slices.Contains(c.AMR, "mfa")}, nil
 }
 
 type ctxKey struct{}

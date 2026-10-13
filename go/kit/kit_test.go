@@ -194,6 +194,46 @@ func TestMFA(t *testing.T) {
 	}
 }
 
+// Vanami staff (G179): only with staff: true and mfa in amr (both SDKs).
+func TestStaff(t *testing.T) {
+	f := newFakeKit(t)
+	ctx := context.Background()
+	v, err := kit.NewVerifier(ctx, f.ts.URL, "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		staff any
+		amr   []string
+		want  bool
+	}{
+		{true, []string{"pwd", "otp", "mfa"}, true},
+		{true, []string{"pwd"}, false}, // the kit never does this; the SDK refuses it anyway
+		{"true", []string{"mfa"}, false},
+		{nil, []string{"mfa"}, false},
+	} {
+		id, err := v.Verify(ctx, f.sign("k1", f.claims(func(c map[string]any) {
+			c["amr"] = tc.amr
+			if tc.staff != nil {
+				c["staff"] = tc.staff
+			}
+		})))
+		if tc.staff == "true" {
+			if err == nil && id.Staff {
+				t.Fatalf("a string is not staff: %+v", id)
+			}
+			continue
+		}
+		if err != nil || id.Staff != tc.want {
+			t.Fatalf("%+v: staff %v, want %v (%v)", tc, id.Staff, tc.want, err)
+		}
+		ctx := kit.WithIdentity(ctx, id)
+		if err := kit.RequireStaff(ctx); (err == nil) != tc.want || (err != nil && !errors.Is(err, kit.ErrNotStaff)) {
+			t.Fatalf("%+v: RequireStaff %v", tc, err)
+		}
+	}
+}
+
 // Seats and the over-limit policy from the token (both SDKs).
 func TestSeats(t *testing.T) {
 	f := newFakeKit(t)

@@ -1,6 +1,6 @@
 {
   "name": "@vanami/accounts",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TypeScript SDK for Vanami accounts (accounts.vanami.com): browser sign-in with PKCE, access-token verification, lifecycle events, the kit API.",
   "license": "MIT",
   "type": "module",

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa, seatsLeft, isSeatLimit, KitAPIError } from "../src/index.js";
+import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa, seatsLeft, isSeatLimit, KitAPIError, requireStaff } from "../src/index.js";
 import { base64url, utf8 } from "../src/encoding.js";
 
 // A stand-in kit: discovery + JWKS over HTTP, keys the test controls.
@@ -133,6 +133,24 @@ test("mfa: only with mfa in amr, the same checks as the Go SDK", async (t) => {
   assert.deepEqual(none.amr, []);
   assert.equal(mfa(none), false);
   assert.equal(mfa(await v.verify(await kit.sign(good(kit.issuer, { amr: ["mfa", 3] })))), true);
+});
+
+test("staff: only with staff true and mfa in amr, the same checks as the Go SDK", async (t) => {
+  const kit = await fakeKit();
+  t.after(() => kit.server.close());
+  const v = await createVerifier({ issuer: kit.issuer, clientId: "mail", now: () => now });
+  const cases: Array<[Record<string, unknown>, boolean]> = [
+    [{ staff: true, amr: ["pwd", "otp", "mfa"] }, true],
+    [{ staff: true, amr: ["pwd"] }, false], // the kit never does this; the SDK refuses it anyway
+    [{ staff: "true", amr: ["mfa"] }, false],
+    [{ amr: ["mfa"] }, false],
+  ];
+  for (const [extra, want] of cases) {
+    const id = await v.verify(await kit.sign(good(kit.issuer, extra)));
+    assert.equal(id.staff, want, JSON.stringify(extra));
+    if (want) requireStaff(id);
+    else assert.throws(() => requireStaff(id), ForbiddenError);
+  }
 });
 
 test("seats and over_limit: the same as the Go SDK", async (t) => {
