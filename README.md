@@ -33,10 +33,34 @@ const verifier = await createVerifier({ issuer: "https://accounts.vanami.com", c
 const identity = await verifier.verify(accessToken);
 ```
 
+## The product catalogue
+
+What the service sells and who may do what, from the kit instead of a copy of the manifest
+(doc 07 D-450): plans with prices, usage terms, seats and trials, entitlements, meters, roles
+with their permissions, each with a name per language. Public, and cached as the kit allows
+(a minute; revalidated by ETag; the last answer while the kit cannot be reached).
+
+```go
+p, err := c.Catalogue(ctx, "")                 // c.Product's
+pro, _ := p.Plan("pro")
+price, _ := pro.Price("year")                  // price.Amount in minor units
+kit.Label(pro.Name, "sv")
+// at start-up or in CI: the keys the code checks are all declared
+if bad := p.Unknown(kit.Keys{Permissions: []string{"isms.write"}, Entitlements: []string{"export"}}); len(bad) > 0 {
+	log.Fatalf("not in the manifest: %v", bad)
+}
+```
+
+```ts
+const p = await kit.catalogue();               // the client's product
+label(planOf(p, "pro")!.name, "sv");
+unknownKeys(p, { permissions: ["isms.write"], entitlements: ["export"] }); // [] when all are declared
+```
+
 ## Versions
 
 One version for all three packages. Before 1.0, a minor version (0.x → 0.x+1) may break;
-a patch never does. Services pin a version and get updates as pull requests (Renovate),
+a patch never does. Services pin a version and get updates as pull requests (Dependabot),
 so their own CI shows whether an update breaks them.
 
 ## Development
