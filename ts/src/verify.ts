@@ -32,6 +32,13 @@ export interface Identity {
   seats?: Seats;
   /** After a downgrade below what the account uses: block_new (default) or read_only. */
   overLimit: string;
+  /**
+   * The user is Vanami staff (doc 07 G179), signed in with two steps. What
+   * staff may do is the service's decision; audit it. The kit sets it only
+   * after two steps and only in a service's own client's tokens; the SDK
+   * also requires mfa. The same as the Go SDK's Staff.
+   */
+  staff: boolean;
 }
 
 export interface Seats {
@@ -108,6 +115,11 @@ export class ForbiddenError extends Error {
  */
 export function requirePermission(id: Identity, permission: string): void {
   if (!can(id, permission)) throw new ForbiddenError(permission);
+}
+
+/** requireStaff throws ForbiddenError (answer 403) unless the caller is Vanami staff (G179). The same as the Go SDK's RequireStaff. */
+export function requireStaff(id: Identity): void {
+  if (!id.staff) throw new ForbiddenError("staff");
 }
 
 export interface VerifierOptions {
@@ -229,6 +241,7 @@ export async function createVerifier(o: VerifierOptions): Promise<Verifier> {
         amr: Array.isArray(claims.amr) ? claims.amr.filter((m: unknown): m is string => typeof m === "string") : [],
         seats: seatsOf(claims.seats),
         overLimit: typeof claims.over_limit === "string" ? claims.over_limit : "block_new",
+        staff: claims.staff === true && Array.isArray(claims.amr) && claims.amr.includes("mfa"),
       };
     },
   };
