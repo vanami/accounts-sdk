@@ -67,6 +67,13 @@ func IsSeatLimit(err error) bool {
 	return errors.As(err, &e) && e.Status == 409 && e.Message == "seat_limit"
 }
 
+// IsTooManyAccounts: CreateAccount was refused because the user already
+// owns as many organisations as the kit allows.
+func IsTooManyAccounts(err error) bool {
+	var e *APIError
+	return errors.As(err, &e) && e.Status == 409 && e.Message == "too_many_accounts"
+}
+
 // Checkout answers the Stripe Checkout URL to redirect the buyer to.
 func (c *Client) Checkout(ctx context.Context, accessToken string, in CheckoutRequest) (string, error) {
 	var out struct {
@@ -209,6 +216,35 @@ type Invitation struct {
 func (c *Client) Account(ctx context.Context, accessToken string) (Account, error) {
 	var out Account
 	err := c.call(ctx, http.MethodGet, "/api/v1/account", accessToken, nil, &out)
+	return out, err
+}
+
+// AccountSummary is one of the user's organisations.
+type AccountSummary struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+	Current bool   `json:"current"` // the token's own
+}
+
+// Accounts answers every organisation the user belongs to (for a switcher).
+// The token may be one without an organisation (VerifyUser): the list is
+// then empty.
+func (c *Client) Accounts(ctx context.Context, accessToken string) ([]AccountSummary, error) {
+	var out struct {
+		Accounts []AccountSummary `json:"accounts"`
+	}
+	err := c.call(ctx, http.MethodGet, "/api/v1/accounts", accessToken, nil, &out)
+	return out.Accounts, err
+}
+
+// CreateAccount makes a new organisation with the user as its owner — also
+// the first, for a user who has none (doc 07 D-465). Then sign the user in
+// to it with its id as the account hint. IsTooManyAccounts tells when the
+// user owns as many as the kit allows.
+func (c *Client) CreateAccount(ctx context.Context, accessToken, name string) (AccountSummary, error) {
+	var out AccountSummary
+	err := c.call(ctx, http.MethodPost, "/api/v1/accounts", accessToken, map[string]string{"name": name}, &out)
 	return out, err
 }
 

@@ -8,7 +8,11 @@ import { buf, fromBase64url, fromUtf8, utf8 } from "./encoding.js";
 export interface Identity {
   /** The token's subject: one Vanami ID across services. */
   userId: string;
-  /** The account (customer workspace) the token speaks for. */
+  /**
+   * The account (organisation) the token speaks for. Never empty from
+   * verify; "" from verifyUser when the user has no organisation yet
+   * (doc 07 D-465). The same as the Go SDK's AccountID.
+   */
   accountId: string;
   /** owner | admin | member in that account. */
   role: string;
@@ -60,6 +64,24 @@ export class KitTokenError extends Error {
     super("kit: invalid token");
     this.name = "KitTokenError";
   }
+}
+
+/**
+ * A valid token for a user who has no organisation yet (doc 07 D-465):
+ * verify refuses it. Send the user to the page that creates one, not back
+ * to sign-in. A KitTokenError, as the Go SDK's ErrNoAccount wraps
+ * ErrInvalidToken.
+ */
+export class NoAccountError extends KitTokenError {
+  constructor() {
+    super("no account");
+    this.name = "NoAccountError";
+  }
+}
+
+/** hasAccount: the token speaks for an organisation. Only verifyUser lets one without through. The same as the Go SDK's HasAccount. */
+export function hasAccount(id: Identity): boolean {
+  return id.accountId !== "";
 }
 
 /** limit answers an integer entitlement; undefined when the plan does not grant it. */
@@ -143,7 +165,15 @@ interface JWK {
 }
 
 export interface Verifier {
+  /** verify checks the token and that it speaks for an organisation; NoAccountError when the user has none. */
   verify(token: string): Promise<Identity>;
+  /**
+   * verifyUser is verify for the few pages that work before the user has an
+   * organisation: the one that creates the first, or lists the user's
+   * organisations. accountId is "" for a user without one; never key data
+   * on it there. The same as the Go SDK's VerifyUser.
+   */
+  verifyUser(token: string): Promise<Identity>;
 }
 
 const trim = (s: string) => s.replace(/\/+$/, "");
@@ -193,57 +223,61 @@ export async function createVerifier(o: VerifierOptions): Promise<Verifier> {
     return keys.get(kid);
   };
 
+  const verifyUser = async (token: string): Promise<Identity> => {
+    const parts = token.split(".");
+    if (parts.length !== 3) throw new KitTokenError("unparseable");
+    const [h, p, s] = parts as [string, string, string];
+    let header: { alg?: string; kid?: string; crit?: unknown };
+    let claims: Record<string, unknown>;
+    let sig: Uint8Array;
+    try {
+      header = JSON.parse(fromUtf8(fromBase64url(h)));
+      claims = JSON.parse(fromUtf8(fromBase64url(p)));
+      sig = fromBase64url(s);
+    } catch {
+      throw new KitTokenError("unparseable");
+    }
+    if (header.alg !== "RS256" || header.crit !== undefined) throw new KitTokenError(`algorithm ${header.alg}`);
+    const key = await keyFor(header.kid ?? "");
+    if (!key) throw new KitTokenError("unknown signing key");
+    const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, buf(sig), buf(utf8(h + "." + p)));
+    if (!ok) throw new KitTokenError("bad signature");
+
+    const aud = typeof claims.aud === "string" ? [claims.aud] : Array.isArray(claims.aud) ? claims.aud : [];
+    const exp = typeof claims.exp === "number" ? claims.exp * 1000 : 0;
+    const nbf = typeof claims.nbf === "number" ? claims.nbf * 1000 : 0;
+    const t = now();
+    if (trim(String(claims.iss ?? "")) !== issuer) throw new KitTokenError(`issuer ${claims.iss}`);
+    if (!aud.includes(o.clientId)) throw new KitTokenError(`not for audience ${o.clientId}`);
+    if (!exp || t > exp + leeway) throw new KitTokenError("expired");
+    if (nbf && t + leeway < nbf) throw new KitTokenError("not yet valid");
+    if (typeof claims.sub !== "string" || !claims.sub) throw new KitTokenError("no subject");
+    return {
+      userId: claims.sub,
+      accountId: typeof claims.account_id === "string" ? claims.account_id : "",
+      role: String(claims.account_role ?? ""),
+      scopes: String(claims.scope ?? "").split(/\s+/).filter(Boolean),
+      clientId: String(claims.client_id ?? ""),
+      expiresAt: new Date(exp),
+      plan: String(claims.plan ?? ""),
+      entitlements: (claims.entitlements ?? {}) as Record<string, number | boolean>,
+      productRole: typeof claims.product_role === "string" ? claims.product_role : "",
+      permissions: Array.isArray(claims.permissions)
+        ? claims.permissions.filter((p: unknown): p is string => typeof p === "string")
+        : [],
+      amr: Array.isArray(claims.amr) ? claims.amr.filter((m: unknown): m is string => typeof m === "string") : [],
+      seats: seatsOf(claims.seats),
+      overLimit: typeof claims.over_limit === "string" ? claims.over_limit : "block_new",
+      staff: claims.staff === true && Array.isArray(claims.amr) && claims.amr.includes("mfa"),
+    };
+  };
   return {
     async verify(token: string): Promise<Identity> {
-      const parts = token.split(".");
-      if (parts.length !== 3) throw new KitTokenError("unparseable");
-      const [h, p, s] = parts as [string, string, string];
-      let header: { alg?: string; kid?: string; crit?: unknown };
-      let claims: Record<string, unknown>;
-      let sig: Uint8Array;
-      try {
-        header = JSON.parse(fromUtf8(fromBase64url(h)));
-        claims = JSON.parse(fromUtf8(fromBase64url(p)));
-        sig = fromBase64url(s);
-      } catch {
-        throw new KitTokenError("unparseable");
-      }
-      if (header.alg !== "RS256" || header.crit !== undefined) throw new KitTokenError(`algorithm ${header.alg}`);
-      const key = await keyFor(header.kid ?? "");
-      if (!key) throw new KitTokenError("unknown signing key");
-      const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, buf(sig), buf(utf8(h + "." + p)));
-      if (!ok) throw new KitTokenError("bad signature");
-
-      const aud = typeof claims.aud === "string" ? [claims.aud] : Array.isArray(claims.aud) ? claims.aud : [];
-      const exp = typeof claims.exp === "number" ? claims.exp * 1000 : 0;
-      const nbf = typeof claims.nbf === "number" ? claims.nbf * 1000 : 0;
-      const t = now();
-      if (trim(String(claims.iss ?? "")) !== issuer) throw new KitTokenError(`issuer ${claims.iss}`);
-      if (!aud.includes(o.clientId)) throw new KitTokenError(`not for audience ${o.clientId}`);
-      if (!exp || t > exp + leeway) throw new KitTokenError("expired");
-      if (nbf && t + leeway < nbf) throw new KitTokenError("not yet valid");
-      if (typeof claims.sub !== "string" || !claims.sub || typeof claims.account_id !== "string" || !claims.account_id) {
-        throw new KitTokenError("no subject/account");
-      }
-      return {
-        userId: claims.sub,
-        accountId: claims.account_id,
-        role: String(claims.account_role ?? ""),
-        scopes: String(claims.scope ?? "").split(/\s+/).filter(Boolean),
-        clientId: String(claims.client_id ?? ""),
-        expiresAt: new Date(exp),
-        plan: String(claims.plan ?? ""),
-        entitlements: (claims.entitlements ?? {}) as Record<string, number | boolean>,
-        productRole: typeof claims.product_role === "string" ? claims.product_role : "",
-        permissions: Array.isArray(claims.permissions)
-          ? claims.permissions.filter((p: unknown): p is string => typeof p === "string")
-          : [],
-        amr: Array.isArray(claims.amr) ? claims.amr.filter((m: unknown): m is string => typeof m === "string") : [],
-        seats: seatsOf(claims.seats),
-        overLimit: typeof claims.over_limit === "string" ? claims.over_limit : "block_new",
-        staff: claims.staff === true && Array.isArray(claims.amr) && claims.amr.includes("mfa"),
-      };
+      const id = await verifyUser(token);
+      if (!hasAccount(id)) throw new NoAccountError();
+      return id;
     },
+    verifyUser,
   };
 }
 

@@ -26,8 +26,11 @@ import (
 
 // Identity is who made the request.
 type Identity struct {
-	UserID    string   // the token's subject: one Vanami ID across services
-	AccountID string   // the account (customer workspace) the token speaks for
+	UserID string // the token's subject: one Vanami ID across services
+	// AccountID is the account (organisation) the token speaks for. Never
+	// empty from Verify and Middleware; "" from VerifyUser and
+	// UserMiddleware when the user has no organisation yet (doc 07 D-465).
+	AccountID string
 	Role      string   // owner | admin | member in that account
 	Scopes    []string // OAuth scopes granted
 	ClientID  string   // the service the token was issued to
@@ -74,6 +77,10 @@ func (id Identity) SeatsLeft() (n int, limited bool) {
 	}
 	return max(id.Seats.Max-id.Seats.Used, 0), true
 }
+
+// HasAccount reports whether the token speaks for an organisation. Only
+// VerifyUser and UserMiddleware let through a token without one.
+func (id Identity) HasAccount() bool { return id.AccountID != "" }
 
 // MFA reports whether the sign-in had two steps (a passkey, or a second
 // factor after the first) — for actions a service wants to protect more.
@@ -174,6 +181,10 @@ func RequireStaff(ctx context.Context) error {
 var (
 	ErrNoToken      = errors.New("kit: no bearer token")
 	ErrInvalidToken = errors.New("kit: invalid token")
+	// ErrNoAccount: a valid token for a user who has no organisation yet
+	// (doc 07 D-465). Verify and Middleware refuse it, wrapped in
+	// ErrInvalidToken; send the user to the page that creates one.
+	ErrNoAccount = errors.New("kit: the user has no organisation yet")
 )
 
 // Verifier checks access tokens for one audience (the service's client id).
@@ -316,9 +327,22 @@ type claims struct {
 }
 
 // Verify checks a raw access token: RS256 signature by a published kit key,
-// issuer, audience, expiry. Every failure is ErrInvalidToken (wrapped with
-// the reason for logs; never shown to the caller).
+// issuer, audience, expiry, and that it speaks for an organisation. Every
+// failure is ErrInvalidToken (wrapped with the reason for logs; never shown
+// to the caller); a user without an organisation is also ErrNoAccount.
 func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
+	id, err := v.VerifyUser(ctx, raw)
+	if err == nil && !id.HasAccount() {
+		return Identity{}, fmt.Errorf("%w: %w", ErrInvalidToken, ErrNoAccount)
+	}
+	return id, err
+}
+
+// VerifyUser is Verify for the few pages that work before the user has an
+// organisation (doc 07 D-465): the one that creates the first, or lists the
+// user's organisations. AccountID is "" for a user without one; never key
+// data on it there.
+func (v *Verifier) VerifyUser(ctx context.Context, raw string) (Identity, error) {
 	jws, err := jose.ParseSigned(raw, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil || len(jws.Signatures) != 1 {
 		return Identity{}, fmt.Errorf("%w: unparseable", ErrInvalidToken)
@@ -345,8 +369,8 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Identity, error) {
 		return Identity{}, fmt.Errorf("%w: expired", ErrInvalidToken)
 	case c.NotBefore != 0 && now.Add(v.leeway).Before(time.Unix(c.NotBefore, 0)):
 		return Identity{}, fmt.Errorf("%w: not yet valid", ErrInvalidToken)
-	case c.Subject == "" || c.AccountID == "":
-		return Identity{}, fmt.Errorf("%w: no subject/account", ErrInvalidToken)
+	case c.Subject == "":
+		return Identity{}, fmt.Errorf("%w: no subject", ErrInvalidToken)
 	}
 	return Identity{UserID: c.Subject, AccountID: c.AccountID, Role: c.AccountRole,
 		Scopes: strings.Fields(c.Scope), ClientID: c.ClientID, ExpiresAt: time.Unix(c.Expiry, 0),
@@ -368,8 +392,18 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 }
 
 // Middleware rejects requests without a valid kit access token (401) and
-// passes the caller's Identity to next.
-func (v *Verifier) Middleware(next http.Handler) http.Handler {
+// passes the caller's Identity to next. A user without an organisation is
+// refused with error="no_account": send them to the page that creates one,
+// not back to sign-in.
+func (v *Verifier) Middleware(next http.Handler) http.Handler { return v.middleware(next, v.Verify) }
+
+// UserMiddleware is Middleware for the routes that work before the user has
+// an organisation (VerifyUser): Identity.AccountID may be "".
+func (v *Verifier) UserMiddleware(next http.Handler) http.Handler {
+	return v.middleware(next, v.VerifyUser)
+}
+
+func (v *Verifier) middleware(next http.Handler, verify func(context.Context, string) (Identity, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
 		raw, ok := strings.CutPrefix(h, "Bearer ")
@@ -377,7 +411,11 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 			unauthorized(w, "")
 			return
 		}
-		id, err := v.Verify(r.Context(), raw)
+		id, err := verify(r.Context(), raw)
+		if errors.Is(err, ErrNoAccount) {
+			unauthorized(w, "no_account")
+			return
+		}
 		if err != nil {
 			unauthorized(w, "invalid_token")
 			return

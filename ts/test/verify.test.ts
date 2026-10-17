@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createVerifier, KitTokenError, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa, seatsLeft, isSeatLimit, KitAPIError, requireStaff } from "../src/index.js";
+import { createVerifier, KitTokenError, NoAccountError, hasAccount, has, limit, require as requireEntitlement, NotEntitledError, bearer, can, requirePermission, ForbiddenError, mfa, seatsLeft, isSeatLimit, KitAPIError, requireStaff } from "../src/index.js";
 import { base64url, utf8 } from "../src/encoding.js";
 
 // A stand-in kit: discovery + JWKS over HTTP, keys the test controls.
@@ -73,6 +73,7 @@ test("verifies the kit's tokens and refuses everything else", async (t) => {
     expired: kit.sign(good(kit.issuer, { exp: now / 1000 - 31 })),
     "not yet valid": kit.sign(good(kit.issuer, { nbf: now / 1000 + 31 })),
     "no account": kit.sign(good(kit.issuer, { account_id: "" })),
+    "no account claim": kit.sign(good(kit.issuer, { account_id: undefined })),
     "signed by a key the kit does not publish": kit.sign(good(kit.issuer), { key: other.pair.privateKey }),
     "alg none": (async () => {
       const [h, p] = (await kit.sign(good(kit.issuer))).split(".");
@@ -178,4 +179,34 @@ test("bearer", () => {
   assert.equal(bearer("Bearer abc.def.ghi"), "abc.def.ghi");
   assert.equal(bearer("Basic xyz"), undefined);
   assert.equal(bearer(undefined), undefined);
+});
+
+// A user without an organisation (doc 07 D-465): verify refuses the token
+// with NoAccountError (a KitTokenError); verifyUser lets it through with no
+// account, for the page that creates one, and makes every other check.
+test("a user without an organisation: verify refuses, verifyUser lets through", async (t) => {
+  const kit = await fakeKit();
+  t.after(() => kit.server.close());
+  const v = await createVerifier({ issuer: kit.issuer, clientId: "mail", now: () => now });
+  const none = await kit.sign(good(kit.issuer, { account_id: undefined, account_role: undefined }));
+
+  const err = await v.verify(none).catch((e) => e);
+  assert.ok(err instanceof NoAccountError && err instanceof KitTokenError, String(err));
+  const id = await v.verifyUser(none);
+  assert.equal(id.userId, "user-1");
+  assert.equal(id.accountId, "");
+  assert.equal(hasAccount(id), false);
+  const withAccount = await v.verifyUser(await kit.sign(good(kit.issuer)));
+  assert.equal(withAccount.accountId, "acc-1");
+  assert.equal(hasAccount(withAccount), true);
+
+  const bad: Record<string, Promise<string>> = {
+    expired: kit.sign(good(kit.issuer, { account_id: undefined, exp: now / 1000 - 31 })),
+    "another service's token": kit.sign(good(kit.issuer, { account_id: undefined, aud: ["peppol"] })),
+    "no subject": kit.sign(good(kit.issuer, { account_id: undefined, sub: "" })),
+  };
+  for (const [name, tok] of Object.entries(bad)) {
+    const e = await v.verifyUser(await tok).catch((x) => x);
+    assert.ok(e instanceof KitTokenError && !(e instanceof NoAccountError), name);
+  }
 });
