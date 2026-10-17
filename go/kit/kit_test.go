@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -102,6 +103,7 @@ func TestVerify(t *testing.T) {
 		"wrong aud":     func(c map[string]any) { c["aud"] = "other" },
 		"not yet valid": func(c map[string]any) { c["nbf"] = time.Now().Add(time.Hour).Unix() },
 		"no account":    func(c map[string]any) { delete(c, "account_id") },
+		"empty account": func(c map[string]any) { c["account_id"] = "" },
 	} {
 		if _, err := v.Verify(ctx, f.sign("k1", f.claims(mod))); !errors.Is(err, kit.ErrInvalidToken) {
 			t.Errorf("%s: want ErrInvalidToken, got %v", name, err)
@@ -255,5 +257,63 @@ func TestSeats(t *testing.T) {
 	}
 	if !kit.IsSeatLimit(&kit.APIError{Status: 409, Message: "seat_limit"}) || kit.IsSeatLimit(&kit.APIError{Status: 409, Message: "x"}) {
 		t.Fatal("IsSeatLimit")
+	}
+}
+
+// A user without an organisation (doc 07 D-465): Verify and Middleware
+// refuse the token, saying why; VerifyUser and UserMiddleware let it
+// through with no account, for the page that creates one.
+func TestNoAccount(t *testing.T) {
+	f := newFakeKit(t)
+	ctx := context.Background()
+	v, err := kit.NewVerifier(ctx, f.ts.URL, "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	none := f.sign("k1", f.claims(func(c map[string]any) { delete(c, "account_id"); delete(c, "account_role") }))
+	if _, err := v.Verify(ctx, none); !errors.Is(err, kit.ErrInvalidToken) || !errors.Is(err, kit.ErrNoAccount) {
+		t.Fatalf("Verify: want ErrInvalidToken and ErrNoAccount, got %v", err)
+	}
+	id, err := v.VerifyUser(ctx, none)
+	if err != nil || id.UserID != "u1" || id.HasAccount() || id.AccountID != "" {
+		t.Fatalf("VerifyUser: %+v %v", id, err)
+	}
+	if id, err := v.VerifyUser(ctx, f.sign("k1", f.claims(nil))); err != nil || !id.HasAccount() || id.AccountID != "a1" {
+		t.Fatalf("VerifyUser with an account: %+v %v", id, err)
+	}
+	// VerifyUser makes every other check.
+	for name, mod := range map[string]func(map[string]any){
+		"expired":    func(c map[string]any) { c["exp"] = time.Now().Add(-time.Hour).Unix() },
+		"wrong aud":  func(c map[string]any) { c["aud"] = "other" },
+		"no subject": func(c map[string]any) { delete(c, "sub") },
+	} {
+		if _, err := v.VerifyUser(ctx, f.sign("k1", f.claims(mod))); !errors.Is(err, kit.ErrInvalidToken) || errors.Is(err, kit.ErrNoAccount) {
+			t.Errorf("VerifyUser %s: want ErrInvalidToken only, got %v", name, err)
+		}
+	}
+
+	var seen *kit.Identity
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { id, _ := kit.FromContext(r.Context()); seen = &id })
+	call := func(h http.Handler, token string) *httptest.ResponseRecorder {
+		seen = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := call(v.Middleware(ok), none)
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Header().Get("WWW-Authenticate"), `error="no_account"`) || seen != nil {
+		t.Fatalf("Middleware: %d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+	bad := f.sign("k1", f.claims(func(c map[string]any) { c["aud"] = "other" }))
+	if rec := call(v.Middleware(ok), bad); !strings.Contains(rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`) {
+		t.Fatalf("Middleware, a bad token: %q", rec.Header().Get("WWW-Authenticate"))
+	}
+	if rec := call(v.UserMiddleware(ok), none); rec.Code != http.StatusOK || seen == nil || seen.UserID != "u1" || seen.HasAccount() {
+		t.Fatalf("UserMiddleware: %d %+v", rec.Code, seen)
+	}
+	if rec := call(v.UserMiddleware(ok), bad); rec.Code != http.StatusUnauthorized || seen != nil {
+		t.Fatalf("UserMiddleware, a bad token: %d", rec.Code)
 	}
 }
