@@ -33,6 +33,32 @@ const verifier = await createVerifier({ issuer: "https://accounts.vanami.com", c
 const identity = await verifier.verify(accessToken);
 ```
 
+## A user without an organisation
+
+A user can be signed in before they belong to any organisation (doc 07 D-465): the kit
+creates none on its own. Their token has no account. `Verify` / `verify` and `Middleware`
+refuse it — `ErrNoAccount` (wrapping `ErrInvalidToken`) / `NoAccountError` (a
+`KitTokenError`), and `WWW-Authenticate: Bearer error="no_account"` — so a service never
+keys data on an empty account by accident. Send that user to the page that creates their
+first organisation, not back to sign-in. That page, and an organisation switcher, use
+`VerifyUser` / `verifyUser` or `UserMiddleware`, where `AccountID` may be `""`
+(`HasAccount()` / `hasAccount(id)`):
+
+```go
+http.Handle("/v1/onboarding/", v.UserMiddleware(onboarding))
+// in the handler
+a, err := c.CreateAccount(ctx, token, "Acme AB") // kit.IsTooManyAccounts(err)
+// then sign the user in again with a.ID as the account hint
+```
+
+```ts
+const who = await verifier.verifyUser(token);
+if (!hasAccount(who)) {
+  const a = await kit.createAccount(token, "Acme AB"); // isTooManyAccounts(e)
+  // then signIn({ accountHint: a.id })
+}
+```
+
 ## Vanami staff
 
 `Identity.Staff` (Go) / `identity.staff` (TS) is true for Vanami's own people (doc 07 G179),

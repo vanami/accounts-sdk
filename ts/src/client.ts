@@ -95,6 +95,11 @@ export function isSeatLimit(e: unknown): boolean {
   return e instanceof KitAPIError && e.status === 409 && e.code === "seat_limit";
 }
 
+/** isTooManyAccounts: createAccount was refused because the user owns as many organisations as the kit allows. The same as the Go SDK's IsTooManyAccounts. */
+export function isTooManyAccounts(e: unknown): boolean {
+  return e instanceof KitAPIError && e.status === 409 && e.code === "too_many_accounts";
+}
+
 /** An account's use of one meter this calendar month (UTC), as the Go SDK's MeterUsage. */
 export interface MeterUsage {
   meter: string;
@@ -177,9 +182,19 @@ export class KitClient {
     return this.call("GET", "/api/v1/account", token);
   }
 
-  /** accounts: every account the user belongs to (for an account switcher). */
+  /** accounts: every account the user belongs to (for an account switcher); empty for a user with none. */
   async accounts(token: string): Promise<AccountSummary[]> {
     return (await this.call<{ accounts: AccountSummary[] }>("GET", "/api/v1/accounts", token)).accounts;
+  }
+
+  /**
+   * createAccount makes a new organisation with the user as its owner — also
+   * the first, for a user who has none (doc 07 D-465; the token may be one
+   * without an organisation). Then sign the user in to it with its id as the
+   * account hint. The same as the Go SDK's CreateAccount.
+   */
+  createAccount(token: string, name: string): Promise<AccountSummary> {
+    return this.call("POST", "/api/v1/accounts", token, { name });
   }
 
   async renameAccount(token: string, name: string): Promise<void> {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { KitClient, KitAPIError } from "../src/index.js";
+import { KitClient, KitAPIError, isTooManyAccounts, isSeatLimit } from "../src/index.js";
 
 test("calls the kit API with the user's token and maps errors", async () => {
   const seen: Array<{ method: string; url: string; auth: string | null; body: unknown }> = [];
@@ -43,4 +43,23 @@ test("billingURL links to the kit's billing page for the account and service", (
     "https://accounts.test/account/organisations/a1/billing/mail/change?plan=business&interval=year");
   assert.equal(c.billingURL("a1", { plan: "pro" }), "https://accounts.test/account/organisations/a1/billing/mail/change?plan=pro&interval=month");
   assert.throws(() => new KitClient({ issuer: "https://accounts.test" }).billingURL("a1"), /needs the client's product/);
+});
+
+test("createAccount makes the user's first organisation, and says when they own too many", async () => {
+  const seen: Array<{ method: string; url: string; auth: string | null; body: unknown }> = [];
+  const f = (async (url: string, init: RequestInit = {}) => {
+    const body = init.body ? JSON.parse(String(init.body)) : undefined;
+    seen.push({ method: init.method ?? "GET", url, auth: new Headers(init.headers).get("Authorization"), body });
+    if (body?.name === "Full") return Response.json({ error: "too_many_accounts", message: "…" }, { status: 409 });
+    return Response.json({ id: "a2", name: "Acme", role: "owner", current: false }, { status: 201 });
+  }) as typeof fetch;
+  const c = new KitClient({ issuer: "https://accounts.test", fetch: f });
+
+  const a = await c.createAccount("tok", "Acme");
+  assert.equal(a.id, "a2");
+  assert.equal(a.role, "owner");
+  assert.deepEqual(seen[0], { method: "POST", url: "https://accounts.test/api/v1/accounts", auth: "Bearer tok", body: { name: "Acme" } });
+  const err = await c.createAccount("tok", "Full").catch((e) => e);
+  assert.ok(isTooManyAccounts(err) && !isSeatLimit(err), String(err));
+  assert.ok(!isTooManyAccounts(new KitAPIError(409, "seat_limit")));
 });
