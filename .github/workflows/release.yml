@@ -3,9 +3,11 @@
 # by tags prefixed with its path). The packages' "version" must already say
 # X.Y.Z (see README, Releasing).
 #
-# npm publishes with trusted publishing (OIDC): no npm token is stored here.
-# Each package on npmjs.com names this repository and this workflow file as
-# its trusted publisher.
+# npm publishes with the NPM_TOKEN repository secret, a granular npm access
+# token that may publish @vanami/accounts and @vanami/accounts-react. Trusted
+# publishing (OIDC) and provenance only work from GitHub-hosted runners, and
+# every job here runs on our own runners (product owner, 2026-10-30), so the
+# packages carry no provenance attestation. Rotate the token before it expires.
 
 name: release
 on:
@@ -14,19 +16,16 @@ on:
 
 permissions:
   contents: write # the go/ tag
-  id-token: write # npm trusted publishing and provenance
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, build]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
-      - run: npm install -g npm@11.6.2
       - name: versions match the tag
         run: |
           want="${GITHUB_REF_NAME#v}"
@@ -40,7 +39,11 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm publish -w ts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: npm publish -w react
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Go module tag
         run: |
           git tag "go/$GITHUB_REF_NAME" "$GITHUB_SHA"

@@ -32,7 +32,6 @@
     "directory": "ts"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   }
 }
