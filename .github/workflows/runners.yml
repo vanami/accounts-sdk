@@ -1,0 +1,27 @@
+name: runners
+
+# Every job runs on our own runners. GitHub-hosted minutes are billed and the
+# product owner has ruled them out (2026-10-30). A queue on the park is waited
+# out, never dodged by moving a job to ubuntu-latest or macos-latest.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  self-hosted-only:
+    runs-on: [self-hosted, linux, x64, build]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every job runs on the self-hosted park
+        run: |
+          bad=$(grep -nE '^[[:space:]]*runs-on:' .github/workflows/*.y*ml | grep -vE 'self-hosted|vars\.' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::A job asks for a GitHub-hosted runner. Use the self-hosted park:"
+            echo "$bad"
+            exit 1
+          fi
